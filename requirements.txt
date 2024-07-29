@@ -6,3 +6,4 @@ matplotlib~=3.9.1
 soundfile
 opencv-python
 python-dotenv
+scikit-image
