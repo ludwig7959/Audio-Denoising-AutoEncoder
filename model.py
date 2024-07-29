@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from torchsummary import summary
+
 
 class DCUnet(nn.Module):
     def __init__(self):
@@ -149,6 +149,3 @@ class DCUnet(nn.Module):
         x = self.activation24(self.batch24(self.conv24(x)))
 
         return x
-
-model = DCUnet()
-summary(model, (3, 128, 128))
