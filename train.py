@@ -108,7 +108,7 @@ for epoch in range(epochs):
     model.train()
     for features_batch, labels_batch in batches:
         model.zero_grad()
-        loss = torch.tensor(0.0, requires_grad=True).to(DEVICE)
+        loss = torch.tensor(0.0, requires_grad=True, device=DEVICE)
         for i in range(len(features_batch)):
             for j in range(len(features_batch[i])):
                 input = features_batch[i][j].unsqueeze(0).to(DEVICE)
