@@ -8,7 +8,7 @@ import numpy as np
 import torch
 import torchaudio
 from dotenv import load_dotenv
-from torch import optim
+from torch import optim, nn
 
 from model import DCUnet
 
@@ -72,7 +72,6 @@ for noise_file in noise_files:
     for i in range(len(noisy_chunks)):
         tensor_image = torch.from_numpy(_spectrogram(noisy_chunks[i])).to(torch.float32)
         tensor_image = tensor_image.unsqueeze(0)
-        print(tensor_image.shape)
         noisy_data.append(tensor_image)
 
 
@@ -95,6 +94,7 @@ gc.collect()
 torch.cuda.empty_cache()
 
 model = DCUnet().to(DEVICE)
+criterion = nn.MSELoss()
 optimizer = optim.Adam(model.parameters(), lr=0.0001)
 os.makedirs("Weights", exist_ok=True)
 
@@ -102,12 +102,11 @@ epochs = 100
 for epoch in range(epochs):
     model.train()
     for features_batch, labels_batch in batches:
-        model.zero_grad()
-        loss = torch.zeros(1, requires_grad=True, device=DEVICE)
         input = torch.stack(features_batch).to(DEVICE)
         label = torch.stack(labels_batch).to(DEVICE)
         output = model(input)
-        loss = loss + l2_loss(output, label)
+        loss = criterion(output, label)
+        optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
