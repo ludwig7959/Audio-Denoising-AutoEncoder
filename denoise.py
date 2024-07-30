@@ -1,4 +1,5 @@
 import gc
+import math
 import os
 
 import cv2
@@ -8,15 +9,13 @@ import torchaudio
 import soundfile as sf
 from dotenv import load_dotenv
 from matplotlib import pyplot as plt
-from matplotlib.colors import Normalize
-from skimage.color import rgb2gray
 
 from model import DCUnet
 
 load_dotenv()
 
-N_FFT = int(os.getenv('N_FFT', 3072))
-HOP_LENGTH = int(os.getenv('HOP_LENGTH', 768))
+N_FFT = int(os.getenv('N_FFT', 2046))
+HOP_LENGTH = int(os.getenv('HOP_LENGTH', 512))
 
 if torch.cuda.is_available():
     DEVICE = torch.device('cuda')
@@ -25,32 +24,44 @@ elif torch.backends.mps.is_available():
 else:
     DEVICE = torch.device('cpu')
 
+def _slice(waveform, length):
+    waveform = waveform.numpy()
+    num_chunks = math.ceil(waveform.shape[1] / length)
+    chunks = []
+
+    for i in range(num_chunks):
+        start = i * length
+        end = min((i + 1) * length, waveform.shape[1])
+        chunk = waveform[:, start:end]
+        if chunk.shape[1] < length:
+            chunk = np.pad(chunk, ((0, 0), (0, length - chunk.shape[1])), mode='constant', constant_values=0)
+
+        chunks.append(torch.from_numpy(chunk))
+
+    return chunks
+
+
 def preprocess_audio(file):
     waveform, sr = torchaudio.load(file)
-
-    waveform = waveform.cpu().numpy()
     num_samples = waveform.shape[1]
 
     y_length = int(N_FFT / 2 + 1)
-    signal_length = int(y_length * HOP_LENGTH - N_FFT + HOP_LENGTH)
+    signal_length = int(y_length * HOP_LENGTH - HOP_LENGTH + 2)
 
     spectrograms = []
     phases = []
     shape = (0, 0)
-    for start in range(0, num_samples, signal_length):
-        end = min(start + signal_length, num_samples)
-        segment = torch.tensor(waveform[:, start:end], dtype=torch.float32, device=DEVICE)
 
-        stft = torch.stft(segment, n_fft=N_FFT, hop_length=HOP_LENGTH, window=torch.hamming_window(window_length=N_FFT).to(DEVICE), return_complex=True)
+    sliced = _slice(waveform, signal_length)
+    for i in range(len(sliced)):
+        stft = torch.stft(sliced[i].to(DEVICE), n_fft=N_FFT, hop_length=HOP_LENGTH, window=torch.hamming_window(window_length=N_FFT).to(DEVICE), return_complex=True)
         spectrogram = torch.abs(stft)
         phase = torch.angle(stft)
-        spectrogram_2d = spectrogram[0]
-        spectrogram_2d_np = spectrogram_2d.cpu().numpy()
-        shape = spectrogram_2d_np.shape
-        cmap = plt.get_cmap('viridis')
-        spectrogram_rgb = cmap(spectrogram_2d_np / np.max(spectrogram_2d_np))[:, :, :3]
-        spectrogram_rgb = cv2.resize(spectrogram_rgb, (1024, 1024))
-        spectrograms.append(spectrogram_rgb)
+        spectrogram_np = spectrogram.cpu().numpy()
+        shape = spectrogram_np.shape
+        spectrogram = torch.from_numpy(cv2.resize(np.transpose(spectrogram_np, (1, 2, 0)), (1024, 1024))).to(torch.float32)
+        spectrogram = spectrogram.squeeze().unsqueeze(0)
+        spectrograms.append(spectrogram)
         phases.append(phase)
 
     return spectrograms, phases, sr, shape
@@ -58,7 +69,7 @@ def preprocess_audio(file):
 gc.collect()
 torch.cuda.empty_cache()
 
-model_weights_path = "Weights/model_100.pth"
+model_weights_path = "Weights/model_200.pth"
 dcunet = DCUnet().to(DEVICE)
 weights = torch.load(model_weights_path, map_location=torch.device(DEVICE), weights_only=True)
 dcunet.load_state_dict(weights)
@@ -74,25 +85,15 @@ for file in os.listdir(input_path):
     spectrograms, phases, sr, shape = preprocess_audio(os.path.join(input_path, file))
     waveforms = []
     for i in range(len(spectrograms)):
-        spectrogram = spectrograms[i]
+        spectrogram = spectrograms[i].to(DEVICE)
         phase = phases[i]
 
-        vmin = np.min(spectrogram)
-        vmax = np.max(spectrogram)
-
-        tensor_image = torch.from_numpy(spectrogram).to(torch.float32)
-        tensor_image = tensor_image.permute(2, 0, 1).unsqueeze(0).to(DEVICE)
-        denoised_spectrogram = dcunet.forward(tensor_image).detach().cpu().numpy().squeeze()
-        denoised_spectrogram = np.transpose(denoised_spectrogram, (1, 2, 0))
+        denoised_spectrogram = dcunet.forward(spectrogram.unsqueeze(0)).detach().cpu().numpy().squeeze()
         resized = cv2.resize(denoised_spectrogram, (shape[1], shape[0]))
-        gray_image = rgb2gray(resized)
-        norm = Normalize(vmin=vmin, vmax=vmax)
-        spectrogram_normalized = norm(gray_image)
-        spectrogram_original = spectrogram_normalized * (vmax - vmin) + vmin
 
-        print(spectrogram_original.shape)
+        print(denoised_spectrogram.shape)
         print(phase.shape)
-        complex_spectrogram = torch.tensor(spectrogram_original, dtype=torch.float32).to(DEVICE) * torch.exp(1j * phase).squeeze()
+        complex_spectrogram = torch.tensor(resized, dtype=torch.float32).to(DEVICE) * torch.exp(1j * phase).squeeze()
         complex_spectrogram_tensor = torch.tensor(complex_spectrogram, dtype=torch.cfloat)
 
         waveform = torch.istft(complex_spectrogram, n_fft=N_FFT, hop_length=HOP_LENGTH, window=torch.hamming_window(window_length=N_FFT).to(DEVICE))
