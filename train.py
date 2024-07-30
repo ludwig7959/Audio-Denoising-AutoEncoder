@@ -8,14 +8,13 @@ import numpy as np
 import torch
 import torchaudio
 from dotenv import load_dotenv
-from matplotlib import pyplot as plt
 from torch import optim
 
 from model import DCUnet
 
 load_dotenv()
 
-N_FFT = int(os.getenv('N_FFT', 2048))
+N_FFT = int(os.getenv('N_FFT', 2046))
 HOP_LENGTH = int(os.getenv('HOP_LENGTH', 512))
 if torch.cuda.is_available():
     DEVICE = torch.device('cuda')
@@ -42,15 +41,13 @@ def _slice(waveform, length):
 
 
 def _spectrogram(waveform):
-    stft = torch.stft(waveform, n_fft=N_FFT, hop_length=HOP_LENGTH, window=torch.hamming_window(window_length=N_FFT), return_complex=True)
+    stft = torch.stft(waveform, n_fft=N_FFT, hop_length=HOP_LENGTH, window=torch.hamming_window(window_length=N_FFT), return_complex=True, center=True)
     spectrogram = torch.abs(stft)
     spectrogram_2d = spectrogram[0]
     spectrogram_2d_np = spectrogram_2d.numpy()
-    cmap = plt.get_cmap('viridis')
-    spectrogram_rgb = cmap(spectrogram_2d_np / np.max(spectrogram_2d_np))[:, :, :3]
-    spectrogram_rgb = cv2.resize(spectrogram_rgb, (1024, 1024))
+    spectrogram_resized = cv2.resize(spectrogram_2d_np, (1024, 1024))
 
-    return spectrogram_rgb
+    return spectrogram_resized
 
 
 noise_audio_path = Path(input('노이즈가 포함된 경로를 입력하세요: '))
@@ -63,22 +60,20 @@ for noise_file in noise_files:
     noisier = waveform + waveform
 
     y_length = int(N_FFT / 2 + 1)
-    signal_length = int(y_length * HOP_LENGTH - N_FFT + HOP_LENGTH)
+    signal_length = int(y_length * HOP_LENGTH - HOP_LENGTH + 2)
     noisier_chunks = _slice(noisier, signal_length)
     noisy_chunks = _slice(waveform, signal_length)
 
     for i in range(len(noisier_chunks)):
         tensor_image = torch.from_numpy(_spectrogram(noisier_chunks[i])).to(torch.float32)
-        tensor_image = tensor_image.permute(2, 0, 1)
-        noisier_chunks[i] = tensor_image
+        tensor_image = tensor_image.unsqueeze(0)
+        noisier_data.append(tensor_image)
 
     for i in range(len(noisy_chunks)):
         tensor_image = torch.from_numpy(_spectrogram(noisy_chunks[i])).to(torch.float32)
-        tensor_image = tensor_image.permute(2, 0, 1)
-        noisy_chunks[i] = tensor_image
-
-    noisier_data.append(noisier_chunks)
-    noisy_data.append(noisy_chunks)
+        tensor_image = tensor_image.unsqueeze(0)
+        print(tensor_image.shape)
+        noisy_data.append(tensor_image)
 
 
 def create_batches(noisier_data, noisy_data, batch_size):
@@ -88,7 +83,7 @@ def create_batches(noisier_data, noisy_data, batch_size):
         yield features_batch, labels_batch
 
 
-batch_size = 2
+batch_size = 32
 batches = list(create_batches(noisier_data, noisy_data, batch_size))
 
 
@@ -109,12 +104,10 @@ for epoch in range(epochs):
     for features_batch, labels_batch in batches:
         model.zero_grad()
         loss = torch.zeros(1, requires_grad=True, device=DEVICE)
-        for i in range(len(features_batch)):
-            for j in range(len(features_batch[i])):
-                input = features_batch[i][j].unsqueeze(0).to(DEVICE)
-                label = labels_batch[i][j].unsqueeze(0).to(DEVICE)
-                output = model(input)
-                loss = loss + l2_loss(output, label)
+        input = torch.stack(features_batch).to(DEVICE)
+        label = torch.stack(labels_batch).to(DEVICE)
+        output = model(input)
+        loss = loss + l2_loss(output, label)
         loss.backward()
         optimizer.step()
 

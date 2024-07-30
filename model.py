@@ -1,12 +1,13 @@
 import torch
 import torch.nn as nn
+import torchsummary
 
 
 class DCUnet(nn.Module):
     def __init__(self):
         super().__init__()
 
-        self.conv1 = nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3, padding=1)
+        self.conv1 = nn.Conv2d(in_channels=1, out_channels=16, kernel_size=3, padding=1)
         self.batch1 = nn.BatchNorm2d(num_features=16)
         self.activation1 = nn.LeakyReLU()
 
@@ -104,12 +105,12 @@ class DCUnet(nn.Module):
         self.batch22 = nn.BatchNorm2d(16)
         self.activation22 = nn.LeakyReLU()
 
-        self.conv23 = nn.ConvTranspose2d(in_channels=16, out_channels=3, kernel_size=3, padding=1)
-        self.batch23 = nn.BatchNorm2d(3)
+        self.conv23 = nn.ConvTranspose2d(in_channels=16, out_channels=2, kernel_size=3, padding=1)
+        self.batch23 = nn.BatchNorm2d(2)
         self.activation23 = nn.LeakyReLU()
 
-        self.conv24 = nn.ConvTranspose2d(in_channels=3, out_channels=3, kernel_size=3, padding=1)
-        self.batch24 = nn.BatchNorm2d(3)
+        self.conv24 = nn.ConvTranspose2d(in_channels=2, out_channels=1, kernel_size=3, padding=1)
+        self.batch24 = nn.BatchNorm2d(1)
         self.activation24 = nn.Tanh()
 
     def forward(self, x):
