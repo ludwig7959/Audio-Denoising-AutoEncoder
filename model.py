@@ -28,12 +28,10 @@ class DCUnet(nn.Module):
         self.conv5 = layer.ComplexConv2d(in_channels=128, out_channels=256, kernel_size=3, padding=1, stride=(2, 2))
         self.batch5 = layer.ComplexBatchNorm2d(256)
         self.activation5 = layer.ComplexLeakyReLU()
-        self.drop5 = nn.Dropout(0.5)
 
         self.conv6 = layer.ComplexConvTranspose2d(in_channels=256, out_channels=256, kernel_size=3, padding=1, stride=(1, 1))
         self.batch6 = layer.ComplexBatchNorm2d(256)
         self.activation6 = layer.ComplexLeakyReLU()
-        self.drop6 = nn.Dropout(0.5)
 
         self.conv7 = layer.ComplexConvTranspose2d(in_channels=512, out_channels=128, kernel_size=3, padding=1, stride=(2, 2))
         self.batch7 = layer.ComplexBatchNorm2d(128)
@@ -77,8 +75,8 @@ class DCUnet(nn.Module):
         skip_connection3 = self.activation3(self.batch3(self.conv3(skip_connection4)))
         skip_connection2 = self.activation4(self.batch4(self.conv4(skip_connection3)))
         skip_connection1 = self.activation5(self.batch5(self.conv5(skip_connection2)))
-        x5 = self.drop5(skip_connection1)
-        x6 = self.drop6(self.activation6(self.batch6(self.conv6(x5))))
+        x5 = skip_connection1
+        x6 = self.activation6(self.batch6(self.conv6(x5)))
 
         x7 = torch.cat((skip_connection1, x6), dim=1)
         x7 = self.activation7(self.batch7(self.conv7(x7)))
