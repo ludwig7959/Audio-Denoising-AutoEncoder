@@ -66,13 +66,23 @@ def preprocess_audio(file):
 
     return spectrograms, phases, sr, shape
 
+
+def min_max_normalize(tensor, min_val, max_val):
+    return (tensor - min_val) / (max_val - min_val)
+
+
+def min_max_denormalize(tensor, min_val, max_val):
+    return tensor * (max_val - min_val) + min_val
+
 gc.collect()
 torch.cuda.empty_cache()
 
-model_weights_path = "Weights/model_200.pth"
+model_weights_path = "models/model_100.pth"
 dcunet = DCUnet().to(DEVICE)
-weights = torch.load(model_weights_path, map_location=torch.device(DEVICE), weights_only=True)
-dcunet.load_state_dict(weights)
+loaded_model = torch.load(model_weights_path, weights_only=False)
+dcunet.load_state_dict(loaded_model['model_state_dict'])
+normalize_min = loaded_model['normalize_min']
+normalize_max = loaded_model['normalize_max']
 
 input_path = input('노이즈를 제거할 오디오 파일들의 경로를 입력하세요: ')
 output_path = input('출력물 경로를 입력하세요: ')
@@ -85,16 +95,13 @@ for file in os.listdir(input_path):
     spectrograms, phases, sr, shape = preprocess_audio(os.path.join(input_path, file))
     waveforms = []
     for i in range(len(spectrograms)):
-        spectrogram = spectrograms[i].to(DEVICE)
+        spectrogram = min_max_normalize(spectrograms[i].to(DEVICE), normalize_min, normalize_max)
         phase = phases[i]
 
         denoised_spectrogram = dcunet.forward(spectrogram.unsqueeze(0)).detach().cpu().numpy().squeeze()
         resized = cv2.resize(denoised_spectrogram, (shape[1], shape[0]))
 
-        print(denoised_spectrogram.shape)
-        print(phase.shape)
-        complex_spectrogram = torch.tensor(resized, dtype=torch.float32).to(DEVICE) * torch.exp(1j * phase).squeeze()
-        complex_spectrogram_tensor = torch.tensor(complex_spectrogram, dtype=torch.cfloat)
+        complex_spectrogram = min_max_denormalize(torch.tensor(resized, dtype=torch.float32).to(DEVICE) * torch.exp(1j * phase).squeeze(), normalize_min, normalize_max)
 
         waveform = torch.istft(complex_spectrogram, n_fft=N_FFT, hop_length=HOP_LENGTH, window=torch.hamming_window(window_length=N_FFT).to(DEVICE))
         waveform_numpy = waveform.detach().cpu().numpy()

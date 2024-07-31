@@ -74,6 +74,16 @@ for noise_file in noise_files:
         tensor_image = tensor_image.unsqueeze(0)
         noisy_data.append(tensor_image)
 
+input_stacked = torch.stack(noisier_data)
+target_stacked = torch.stack(noisy_data)
+
+normalize_min = torch.min(input_stacked.min(), target_stacked.min())
+normalize_max = torch.max(input_stacked.max(), target_stacked.max())
+
+
+def min_max_normalize(tensor, min_val, max_val):
+    return (tensor - min_val) / (max_val - min_val)
+
 
 def create_batches(noisier_data, noisy_data, batch_size):
     for i in range(0, len(noisier_data), batch_size):
@@ -102,16 +112,20 @@ epochs = 100
 for epoch in range(epochs):
     model.train()
     for features_batch, labels_batch in batches:
-        input = torch.stack(features_batch).to(DEVICE)
-        label = torch.stack(labels_batch).to(DEVICE)
+        input = min_max_normalize(torch.stack(features_batch).to(DEVICE), normalize_min, normalize_max)
+        label = min_max_normalize(torch.stack(labels_batch).to(DEVICE), normalize_min, normalize_max)
         output = model(input)
         loss = criterion(output, label)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
-    torch.save(model.state_dict(), 'Weights/model_'+str(epoch+1)+'.pth')
-    torch.save(optimizer.state_dict(), 'Weights/opt_'+str(epoch+1)+'.pth')
+    torch.save({
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'normalize_min': normalize_min,
+        'normalize_max': normalize_max
+    }, 'models/model_' + str(epoch+1) + '.pth')
 
     print(f'Epoch {epoch+1}, Loss: {loss.item()}')
 
