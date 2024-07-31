@@ -3,7 +3,6 @@ import math
 import os
 from pathlib import Path
 
-import cv2
 import numpy as np
 import torch
 import torchaudio
@@ -48,7 +47,7 @@ def _stft(waveform):
     return stft_resized
 
 
-noise_audio_path = Path(input('노이즈가 포함된 경로를 입력하세요: '))
+noise_audio_path = Path(input('Enter the path of the directory that contains audio files of noise: '))
 noise_files = sorted(list(noise_audio_path.rglob('*.wav')))
 
 noisier_data = []
@@ -94,12 +93,9 @@ def create_batches(noisier_data, noisy_data, batch_size):
         yield features_batch, labels_batch
 
 
-batch_size = int(os.getenv('BATCH_SIZE', 8))
+batch_size = int(os.getenv('BATCH_SIZE', 4))
 batches = list(create_batches(noisier_data, noisy_data, batch_size))
 
-
-def l2_loss(y_pred, y_true):
-    return torch.mean((y_pred - y_true) ** 2)
 
 def complex_mse_loss(y_true, y_pred):
     real_loss = nn.MSELoss()(y_true.real, y_pred.real)
@@ -114,7 +110,7 @@ model = DCUnet().to(DEVICE)
 optimizer = optim.Adam(model.parameters())
 os.makedirs("models", exist_ok=True)
 
-epochs = 100
+epochs = int(input('Epochs: '))
 for epoch in range(epochs):
     model.train()
 
