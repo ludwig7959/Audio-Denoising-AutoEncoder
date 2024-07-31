@@ -74,9 +74,9 @@ class DCUnet(nn.Module):
     def forward(self, x):
         x1 = self.activation1(self.batch1(self.conv1(x)))
         skip_connection4 = self.activation2(self.batch2(self.conv2(x1)))
-        skip_connection3 = self.activation3(self.batch3(self.conv3(x2)))
-        skip_connection2 = self.activation4(self.batch4(self.conv4(x3)))
-        skip_connection1 = self.activation5(self.batch5(self.conv5(x4)))
+        skip_connection3 = self.activation3(self.batch3(self.conv3(skip_connection4)))
+        skip_connection2 = self.activation4(self.batch4(self.conv4(skip_connection3)))
+        skip_connection1 = self.activation5(self.batch5(self.conv5(skip_connection2)))
         x5 = self.drop5(skip_connection1)
         x6 = self.drop6(self.activation6(self.batch6(self.conv6(x5))))
 
