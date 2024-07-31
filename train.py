@@ -101,23 +101,30 @@ batches = list(create_batches(noisier_data, noisy_data, batch_size))
 def l2_loss(y_pred, y_true):
     return torch.mean((y_pred - y_true) ** 2)
 
+def complex_mse_loss(y_true, y_pred):
+    real_loss = nn.MSELoss()(y_true.real, y_pred.real)
+    imag_loss = nn.MSELoss()(y_true.imag, y_pred.imag)
+    return real_loss + imag_loss
+
 
 gc.collect()
 torch.cuda.empty_cache()
 
 model = DCUnet().to(DEVICE)
-criterion = nn.MSELoss()
 optimizer = optim.Adam(model.parameters())
 os.makedirs("models", exist_ok=True)
 
 epochs = 100
 for epoch in range(epochs):
     model.train()
+
+    epoch_loss = 0.0
     for features_batch, labels_batch in batches:
         input = min_max_normalize(torch.stack(features_batch).to(DEVICE), normalize_min, normalize_max)
         label = min_max_normalize(torch.stack(labels_batch).to(DEVICE), normalize_min, normalize_max)
         output = model(input)
-        loss = criterion(output, label)
+        loss = complex_mse_loss(output, label)
+        epoch_loss += loss
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -129,7 +136,7 @@ for epoch in range(epochs):
         'normalize_max': normalize_max
     }, 'models/model_' + str(epoch+1) + '.pth')
 
-    print(f'Epoch {epoch+1}, Loss: {loss.item()}')
+    print(f'Epoch {epoch+1}, Loss: {epoch_loss / len(batches)}')
 
     gc.collect()
     torch.cuda.empty_cache()
