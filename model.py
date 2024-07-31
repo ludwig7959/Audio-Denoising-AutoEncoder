@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import torchsummary
 
 import layer
 
@@ -66,10 +65,10 @@ class DCUnet(nn.Module):
         self.activation14 = layer.ComplexLeakyReLU()
 
         self.conv15 = layer.ComplexConvTranspose2d(in_channels=2, out_channels=1, kernel_size=3, padding=1, stride=1)
-        self.batch15 = layer.ComplexBatchNorm2d(1)
-        self.activation15 = layer.ComplexTanh()
 
     def forward(self, x):
+        original_x = x
+
         x1 = self.activation1(self.batch1(self.conv1(x)))
         skip_connection4 = self.activation2(self.batch2(self.conv2(x1)))
         skip_connection3 = self.activation3(self.batch3(self.conv3(skip_connection4)))
@@ -98,6 +97,20 @@ class DCUnet(nn.Module):
 
         x14 = self.activation14(self.batch14(self.conv14(x13)))
 
-        x15 = self.activation15(self.batch15(self.conv15(x14)))
+        x15 = self.conv15(x14)
 
-        return x15
+        mask_phase = x15 / (torch.abs(x15) + 1e-8)
+        mask_magnitude = torch.tanh(torch.abs(x15))
+        mask = mask_phase * mask_magnitude
+
+        mask_real = mask.real
+        mask_imag = mask.imag
+
+        output_real = mask_real * original_x.real - mask_imag * original_x.imag
+        output_real = torch.squeeze(output_real, 1)
+        output_imag = mask_real * original_x.imag + mask_imag * original_x.real
+        output_imag = torch.squeeze(output_imag, 1)
+
+        output = torch.complex(output_real, output_imag)
+
+        return output
