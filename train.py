@@ -92,7 +92,7 @@ def create_batches(noisier_data, noisy_data, batch_size):
         yield features_batch, labels_batch
 
 
-batch_size = os.getenv('BATCH_SIZE', 8)
+batch_size = int(os.getenv('BATCH_SIZE', 8))
 batches = list(create_batches(noisier_data, noisy_data, batch_size))
 
 
@@ -104,9 +104,9 @@ gc.collect()
 torch.cuda.empty_cache()
 
 model = DCUnet().to(DEVICE)
-criterion = nn.HuberLoss()
+criterion = nn.MSELoss()
 optimizer = optim.Adam(model.parameters())
-os.makedirs("Weights", exist_ok=True)
+os.makedirs("models", exist_ok=True)
 
 epochs = 100
 for epoch in range(epochs):
