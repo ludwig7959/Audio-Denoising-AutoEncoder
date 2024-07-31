@@ -82,6 +82,8 @@ normalize_max = loaded_model['normalize_max']
 input_path = input('Enter the path of the directory that contains audio files to denoise: ')
 output_path = input('Enter the output path: ')
 
+gc.collect()
+torch.cuda.empty_cache()
 
 for file in os.listdir(input_path):
     if not file.endswith(".wav"):
