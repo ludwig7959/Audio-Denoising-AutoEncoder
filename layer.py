@@ -112,7 +112,16 @@ class ComplexLeakyReLU(nn.Module):
         self.leaky_relu = nn.LeakyReLU(negative_slope)
 
     def forward(self, x):
-        x_real = x.real
-        x_im = x.imag
 
         return torch.complex(self.leaky_relu(x.real), self.leaky_relu(x.imag))
+
+
+class ComplexTanh(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        self.tanh = nn.Tanh()
+
+    def forward(self, x):
+
+        return torch.complex(self.tanh(x.real), self.tanh(x.imag))
