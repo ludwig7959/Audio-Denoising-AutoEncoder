@@ -81,6 +81,7 @@ normalize_max = loaded_model['normalize_max']
 
 input_path = input('Enter the path of the directory that contains audio files to denoise: ')
 output_path = input('Enter the output path: ')
+os.makedirs(output_path, exist_ok=True)
 
 gc.collect()
 torch.cuda.empty_cache()
