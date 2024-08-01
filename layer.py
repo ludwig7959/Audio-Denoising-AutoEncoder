@@ -2,6 +2,17 @@ import torch
 from torch import nn
 
 
+class ComplexLinear(nn.Module):
+    def __init__(self, in_features, out_features):
+        super().__init__()
+
+        self.real_linear = nn.Linear(in_features=in_features, out_features=out_features)
+        self.im_linear = nn.Linear(in_features=in_features, out_features=out_features)
+
+    def forward(self, x):
+        return torch.complex(self.real_linear(x.real), self.im_linear(x.imag))
+
+
 class ComplexConv2d(nn.Module):
 
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0):
@@ -103,6 +114,28 @@ class ComplexBatchNorm2d(nn.Module):
 
         output = torch.complex(n_real, n_im)
         return output
+
+
+class ComplexSigmoid(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+
+        return torch.complex(self.sigmoid(x.real), self.sigmoid(x.imag))
+
+
+class ComplexReLU(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        self.relu = nn.ReLU()
+
+    def forward(self, x):
+
+        return torch.complex(self.relu(x.real), self.relu(x.imag))
 
 
 class ComplexLeakyReLU(nn.Module):
