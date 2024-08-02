@@ -10,7 +10,10 @@ class ComplexLinear(nn.Module):
         self.im_linear = nn.Linear(in_features=in_features, out_features=out_features)
 
     def forward(self, x):
-        return torch.complex(self.real_linear(x.real), self.im_linear(x.imag))
+        output_real = self.real_linear(x.real.clone())
+        output_imag = self.im_linear(x.imag.clone())
+
+        return torch.complex(output_real, output_imag)
 
 
 class ComplexConv2d(nn.Module):

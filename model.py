@@ -263,7 +263,7 @@ class IDAAE(nn.Module):
             autoencoder_loss = reconstruction_loss + 1.0 * encoder_loss
 
             self.optimizer_discriminator.zero_grad()
-            discriminator_loss.backward(retain_graph=True)
+            discriminator_loss.backward()
             self.optimizer_discriminator.step()
 
             self.optimizer.zero_grad()
