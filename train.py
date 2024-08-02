@@ -92,10 +92,10 @@ def min_max_normalize(tensor, min_val, max_val):
     return (tensor - min_val) / (max_val - min_val)
 
 
-def create_batches(noisier_data, noisy_data, batch_size):
-    for i in range(0, len(noisier_data), batch_size):
-        features_batch = min_max_normalize(torch.stack(noisier_data[i:i + batch_size]).to(DEVICE), normalize_min, normalize_max)
-        labels_batch = min_max_normalize(torch.stack(noisy_data[i:i + batch_size]).to(DEVICE), normalize_min, normalize_max)
+def create_batches(input_data, target_data, batch_size):
+    for i in range(0, len(input_data), batch_size):
+        features_batch = min_max_normalize(torch.stack(input_data[i:i + batch_size]), normalize_min, normalize_max)
+        labels_batch = min_max_normalize(torch.stack(target_data[i:i + batch_size]), normalize_min, normalize_max)
         yield features_batch, labels_batch
 
 

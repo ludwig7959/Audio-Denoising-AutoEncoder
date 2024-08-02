@@ -11,8 +11,6 @@ class DCUnet(nn.Module):
     def __init__(self):
         super().__init__()
 
-        self.optimizer = optim.Adam(self.parameters())
-
         self.conv1 = layer.ComplexConv2d(in_channels=1, out_channels=16, kernel_size=3, padding=1)
         self.batch1 = layer.ComplexBatchNorm2d(num_features=16)
         self.activation1 = layer.ComplexLeakyReLU()
@@ -71,6 +69,8 @@ class DCUnet(nn.Module):
 
         self.conv15 = layer.ComplexConvTranspose2d(in_channels=2, out_channels=1, kernel_size=3, padding=1, stride=1)
 
+        self.optimizer = optim.Adam(self.parameters())
+
     def forward(self, x):
         x1 = self.activation1(self.batch1(self.conv1(x)))
         skip_connection4 = self.activation2(self.batch2(self.conv2(x1)))
@@ -128,7 +128,7 @@ class DCUnet(nn.Module):
             label = labels_batch
             output = self(input)
             loss = complex_mse_loss(output, label)
-            epoch_loss += loss
+            epoch_loss += loss.item()
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
@@ -154,9 +154,6 @@ class IDAAE(nn.Module):
         self.sigma = sigma
         self.M = M
 
-        self.optimizer = optim.Adam(self.parameters())
-        self.optimizer_discriminator = optim.Adam(self.parameters())
-
         self.conv1 = layer.ComplexConv2d(in_channels=1, out_channels=16, kernel_size=5, padding=2, stride=2)
         self.activation1 = layer.ComplexReLU()
         self.conv2 = layer.ComplexConv2d(in_channels=16, out_channels=32, kernel_size=5, padding=2, stride=2)
@@ -176,9 +173,13 @@ class IDAAE(nn.Module):
         self.conv9 = layer.ComplexConvTranspose2d(in_channels=32, out_channels=16, kernel_size=3, padding=1, stride=2, output_padding=1)
         self.activation9 = layer.ComplexReLU()
         self.conv10 = layer.ComplexConvTranspose2d(in_channels=16, out_channels=1, kernel_size=3, padding=1, stride=2, output_padding=1)
+        self.activation10 = layer.ComplexSigmoid()
 
         self.discriminator = Discriminator(prior=self.norm_prior)
         self.linear_svm = LinearSVM(0.5)
+
+        self.optimizer = optim.RMSprop(self.parameters())
+        self.optimizer_discriminator = optim.RMSprop(self.discriminator.parameters())
 
     def norm_prior(self, noSamples=25):
         z = torch.rand(noSamples, 100)
@@ -197,7 +198,7 @@ class IDAAE(nn.Module):
         noise_real = self.sigma * torch.rand(x.real.size())
         noise_imag = self.sigma * torch.rand(x.imag.size())
 
-        return torch.complex(x.real + noise_real, x.imag + noise_imag)
+        return torch.complex(x.real + noise_real.to(x.device), x.imag + noise_imag.to(x.device))
 
     def sample_z(self, noSamples=25):
         z_real = self.norm_prior(noSamples=noSamples)
@@ -205,7 +206,7 @@ class IDAAE(nn.Module):
 
         return torch.complex(z_real, z_imag)
 
-    def decode(self, x):
+    def decode(self, x, original_x):
         x6 = self.activation6(self.linear6(x))
         x7 = self.activation7(self.conv7(torch.complex(x6.real.view(x6.size(0), -1, 64, 64), x6.imag.view(x6.size(0), -1, 64, 64))))
         x8 = self.activation8(self.conv8(x7))
@@ -219,22 +220,20 @@ class IDAAE(nn.Module):
         mask_real = mask.real
         mask_imag = mask.imag
 
-        output_real = mask_real * x.real - mask_imag * x.imag
-        output_real = torch.squeeze(output_real, 1)
-        output_imag = mask_real * x.imag + mask_imag * x.real
-        output_imag = torch.squeeze(output_imag, 1)
+        output_real = mask_real * original_x.real - mask_imag * original_x.imag
+        output_imag = mask_real * original_x.imag + mask_imag * original_x.real
 
         output = torch.complex(output_real, output_imag)
 
         return output
 
     def forward(self, x):
-        x_corr = torch.zeros(x.size(), dtype=torch.complex64)
+        x_corr = torch.zeros(x.size(), dtype=torch.complex64).to(next(self.parameters()).device)
         for m in range(self.M):
             x_corr += self.corrupt(x)
         x_corr /= self.M
         z = self.encode(x_corr)
-        return z, self.decode(z)
+        return z, self.decode(z, x)
 
     def rec_loss(self, rec_x, x, loss='BCE'):
         if loss == 'BCE':
@@ -251,30 +250,29 @@ class IDAAE(nn.Module):
         epoch_loss_discriminator = 0.0
         for features_batch, labels_batch in batches:
             self.train()
-            self.discriminator.train()
 
-            input = features_batch
-            label = labels_batch
+            input = features_batch.to(next(self.parameters()).device)
+            label = labels_batch.to(next(self.parameters()).device)
 
             z_fake, x_reconstructed = self.forward(input)
 
-            reconstruction_loss = self.rec_loss(x_reconstructed, input, loss='MSE')  #loss='BCE' or 'MSE'
+            reconstruction_loss = self.rec_loss(x_reconstructed, input, loss='MSE')
             encoder_loss = self.discriminator.gen_loss(z_fake)
             discriminator_loss = self.discriminator.dis_loss(z_fake)
 
             autoencoder_loss = reconstruction_loss + 1.0 * encoder_loss
 
             self.optimizer_discriminator.zero_grad()
-            discriminator_loss.backward()
+            discriminator_loss.backward(retain_graph=True)
             self.optimizer_discriminator.step()
 
             self.optimizer.zero_grad()
             autoencoder_loss.backward()
             self.optimizer.step()
 
-            epoch_loss_encoder += encoder_loss
-            epoch_loss_reconstruction += reconstruction_loss
-            epoch_loss_discriminator += discriminator_loss
+            epoch_loss_encoder += encoder_loss.item()
+            epoch_loss_reconstruction += reconstruction_loss.item()
+            epoch_loss_discriminator += discriminator_loss.item()
 
         loss['Encoder Loss'].append(epoch_loss_encoder)
         loss['Rec. Loss'].append(epoch_loss_reconstruction)
@@ -316,20 +314,20 @@ class Discriminator(nn.Module):
         return self.discriminate(z)
 
     def dis_loss(self, z):
-        z_real = torch.complex(self.prior(z.size(0)), self.prior(z.size(0)))
+        z_real = torch.complex(self.prior(z.size(0)), self.prior(z.size(0))).to(next(self.parameters()).device)
         p_real = self.discriminate(z_real)
 
         z_fake = z.detach()
         p_fake = self.discriminate(z_fake)
 
-        ones = torch.ones(p_real.size())
-        zeros = torch.zeros(p_real.size())
+        ones = torch.ones(p_real.size()).to(next(self.parameters()).device)
+        zeros = torch.zeros(p_real.size()).to(next(self.parameters()).device)
 
         return 0.5 * torch.mean(binary_cross_entropy(p_real.real, ones) + binary_cross_entropy(p_real.imag, ones) + binary_cross_entropy(p_fake.real, zeros) + binary_cross_entropy(p_fake.imag, zeros))
 
     def gen_loss(self, z):
         p_fake = self.discriminate(z)
-        ones = torch.ones(p_fake.size())
+        ones = torch.ones(p_fake.size()).to(next(self.parameters()).device)
         return torch.mean(binary_cross_entropy(p_fake.real, ones) + binary_cross_entropy(p_fake.imag, ones))
 
 
