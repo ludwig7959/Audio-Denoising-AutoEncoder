@@ -1,13 +1,17 @@
 import torch
 import torch.nn as nn
+from torch import optim
 from torch.nn.functional import binary_cross_entropy
 
 import layer
+from function import complex_mse_loss
 
 
 class DCUnet(nn.Module):
     def __init__(self):
         super().__init__()
+
+        self.optimizer = optim.Adam(self.parameters())
 
         self.conv1 = layer.ComplexConv2d(in_channels=1, out_channels=16, kernel_size=3, padding=1)
         self.batch1 = layer.ComplexBatchNorm2d(num_features=16)
@@ -114,6 +118,31 @@ class DCUnet(nn.Module):
 
         return output
 
+    def train_epoch(self, batches):
+        loss = {'Loss': []}
+        epoch_loss = 0.0
+        for features_batch, labels_batch in batches:
+            self.train()
+
+            input = features_batch
+            label = labels_batch
+            output = self(input)
+            loss = complex_mse_loss(output, label)
+            epoch_loss += loss
+            self.optimizer.zero_grad()
+            loss.backward()
+            self.optimizer.step()
+
+        loss['Loss'].append(epoch_loss)
+
+    def save(self, epoch, min, max):
+        torch.save({
+            'model_state_dict': self.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'normalize_min': min,
+            'normalize_max': max
+        }, 'models/dcunet_' + str(epoch + 1) + '.pth')
+
 
 class IDAAE(nn.Module):
 
@@ -124,6 +153,9 @@ class IDAAE(nn.Module):
 
         self.sigma = sigma
         self.M = M
+
+        self.optimizer = optim.Adam(self.parameters())
+        self.optimizer_discriminator = optim.Adam(self.parameters())
 
         self.conv1 = layer.ComplexConv2d(in_channels=1, out_channels=16, kernel_size=5, padding=2, stride=2)
         self.activation1 = layer.ComplexReLU()
@@ -144,6 +176,9 @@ class IDAAE(nn.Module):
         self.conv9 = layer.ComplexConvTranspose2d(in_channels=32, out_channels=16, kernel_size=3, padding=1, stride=2, output_padding=1)
         self.activation9 = layer.ComplexReLU()
         self.conv10 = layer.ComplexConvTranspose2d(in_channels=16, out_channels=1, kernel_size=3, padding=1, stride=2, output_padding=1)
+
+        self.discriminator = Discriminator(prior=self.norm_prior)
+        self.linear_svm = LinearSVM(0.5)
 
     def norm_prior(self, noSamples=25):
         z = torch.rand(noSamples, 100)
@@ -201,6 +236,61 @@ class IDAAE(nn.Module):
         z = self.encode(x_corr)
         return z, self.decode(z)
 
+    def rec_loss(self, rec_x, x, loss='BCE'):
+        if loss == 'BCE':
+            return torch.mean(binary_cross_entropy(rec_x.real, x.real, size_average=True) + binary_cross_entropy(rec_x.imag, x.imag, size_average=True))
+        elif loss == 'MSE':
+            return torch.mean(complex_mse_loss(rec_x, x))
+        else:
+            print('unknown loss: '+loss)
+
+    def train_epoch(self, batches):
+        loss = {'Encoder Loss': [], 'Rec. Loss': [], 'Dis. Loss': []}
+        epoch_loss_encoder = 0.0
+        epoch_loss_reconstruction = 0.0
+        epoch_loss_discriminator = 0.0
+        for features_batch, labels_batch in batches:
+            self.train()
+            self.discriminator.train()
+
+            input = features_batch
+            label = labels_batch
+
+            z_fake, x_reconstructed = self.forward(input)
+
+            reconstruction_loss = self.rec_loss(x_reconstructed, input, loss='MSE')  #loss='BCE' or 'MSE'
+            encoder_loss = self.discriminator.gen_loss(z_fake)
+            discriminator_loss = self.discriminator.dis_loss(z_fake)
+
+            autoencoder_loss = reconstruction_loss + 1.0 * encoder_loss
+
+            self.optimizer_discriminator.zero_grad()
+            discriminator_loss.backward()
+            self.optimizer_discriminator.step()
+
+            self.optimizer.zero_grad()
+            autoencoder_loss.backward()
+            self.optimizer.step()
+
+            epoch_loss_encoder += encoder_loss
+            epoch_loss_reconstruction += reconstruction_loss
+            epoch_loss_discriminator += discriminator_loss
+
+        loss['Encoder Loss'].append(epoch_loss_encoder)
+        loss['Rec. Loss'].append(epoch_loss_reconstruction)
+        loss['Dis. Loss'].append(epoch_loss_discriminator)
+
+        return loss
+
+    def save(self, epoch, min, max):
+        torch.save({
+            'model_state_dict': self.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'optimizer_discriminator_state_dict': self.optimizer_discriminator.state_dict(),
+            'normalize_min': min,
+            'normalize_max': max
+        }, 'models/idaae_' + str(epoch + 1) + '.pth')
+
 
 class Discriminator(nn.Module):
     def __init__(self, prior):
@@ -226,21 +316,21 @@ class Discriminator(nn.Module):
         return self.discriminate(z)
 
     def dis_loss(self, z):
-        zReal = torch.complex(self.prior(z.size(0)), self.prior(z.size(0)))
-        pReal = self.discriminate(zReal)
+        z_real = torch.complex(self.prior(z.size(0)), self.prior(z.size(0)))
+        p_real = self.discriminate(z_real)
 
-        zFake = z.detach()
-        pFake = self.discriminate(zFake)
+        z_fake = z.detach()
+        p_fake = self.discriminate(z_fake)
 
-        ones = torch.ones(pReal.size())
-        zeros = torch.zeros(pReal.size())
+        ones = torch.ones(p_real.size())
+        zeros = torch.zeros(p_real.size())
 
-        return 0.5 * torch.mean(binary_cross_entropy(pReal.real, ones) + binary_cross_entropy(pReal.imag, ones) + binary_cross_entropy(pFake.real, zeros) + binary_cross_entropy(pFake.imag, zeros))
+        return 0.5 * torch.mean(binary_cross_entropy(p_real.real, ones) + binary_cross_entropy(p_real.imag, ones) + binary_cross_entropy(p_fake.real, zeros) + binary_cross_entropy(p_fake.imag, zeros))
 
     def gen_loss(self, z):
-        pFake = self.discriminate(z)
-        ones = torch.ones(pFake.size())
-        return torch.mean(binary_cross_entropy(pFake.real, ones) + binary_cross_entropy(pFake.imag, ones))
+        p_fake = self.discriminate(z)
+        ones = torch.ones(p_fake.size())
+        return torch.mean(binary_cross_entropy(p_fake.real, ones) + binary_cross_entropy(p_fake.imag, ones))
 
 
 class LinearSVM(nn.Module):
@@ -261,7 +351,7 @@ class LinearSVM(nn.Module):
         loss += self.l2_penalty * torch.mean(self.decision_function.im_linear.weight ** 2)
         return loss
 
-    def binary_class_score(self, output, target, thresh=0):
-        predLabel = torch.gt(output, thresh)
-        classScoreTest = torch.eq(predLabel, target.type_as(predLabel))
-        return  classScoreTest.float().sum()/target.size(0)
+    def binary_class_score(self, output, target, thresh=0.5):
+        pred_label = torch.gt(output, thresh)
+        class_score_test = torch.eq(pred_label, target.type_as(pred_label))
+        return  class_score_test.float().sum()/target.size(0)

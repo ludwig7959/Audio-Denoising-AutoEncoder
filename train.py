@@ -1,16 +1,15 @@
 import gc
-import math
 import os
 from pathlib import Path
 
-import numpy as np
 import torch
 import torchaudio
 from dotenv import load_dotenv
-from torch import optim, nn
+from torch import optim
 from torchvision.transforms import transforms
 
-from model import DCUnet
+from function import slice_waveform
+from model import DCUnet, IDAAE
 
 load_dotenv()
 
@@ -23,60 +22,67 @@ elif torch.backends.mps.is_available():
 else:
     DEVICE = torch.device('cpu')
 
-def _slice(waveform, length):
-    waveform = waveform.numpy()
-    num_chunks = math.ceil(waveform.shape[1] / length)
-    chunks = []
-
-    for i in range(num_chunks):
-        start = i * length
-        end = min((i + 1) * length, waveform.shape[1])
-        chunk = waveform[:, start:end]
-        if chunk.shape[1] < length:
-            chunk = np.pad(chunk, ((0, 0), (0, length - chunk.shape[1])), mode='constant')
-
-        chunks.append(torch.from_numpy(chunk))
-
-    return chunks
-
 
 def _stft(waveform):
-    stft = torch.stft(waveform, n_fft=N_FFT, hop_length=HOP_LENGTH, window=torch.hamming_window(window_length=N_FFT), return_complex=True, center=True)
+    stft = torch.stft(waveform, n_fft=N_FFT, hop_length=HOP_LENGTH, window=torch.hamming_window(window_length=N_FFT),
+                      return_complex=True, center=True)
     stft_resized = transforms.Resize((1024, 1024))(stft.squeeze())
 
     return stft_resized
 
 
-noise_audio_path = Path(input('Enter the path of the directory that contains audio files of noise: '))
-noise_files = sorted(list(noise_audio_path.rglob('*.wav')))
+input_audio_path = Path(os.getenv('INPUT_PATH', 'input'))
+if not input_audio_path.is_dir():
+    print('Input path doesn''t exist')
+    exit(0)
+target_audio_path = Path(os.getenv('TARGET_PATH', 'target'))
+if not target_audio_path.is_dir():
+    print('Target path doesn''t exist')
+    exit(0)
 
-noisier_data = []
-noisy_data = []
-noisier_abs = []
-noisy_abs = []
-for noise_file in noise_files:
-    waveform, sr = torchaudio.load(noise_file)
-    noisier = waveform + waveform
+input_files = sorted(list(input_audio_path.rglob('*.wav')))
+input_data = []
+target_data = []
+input_abs = []
+target_abs = []
+for input_file in input_files:
+    target_file = target_audio_path / input_file.name
+    if not target_file.is_file():
+        print(f'Skipping {input_file} because there is no matching target.')
+        continue
+
+    input_waveform, input_sr = torchaudio.load(input_file)
+    target_waveform, target_sr = torchaudio.load(target_file)
+
+    print(input_waveform.shape)
+
+    # Change stereo audio to monoaudio
+    if input_waveform.size(0) > 1:
+        input_waveform = torch.mean(input_waveform, dim=0, keepdim=True)
+
+        print(input_waveform.shape)
+    if target_waveform.size(0) > 1:
+        target_waveform = torch.mean(target_waveform, dim=0, keepdim=True)
 
     y_length = int(N_FFT / 2 + 1)
     signal_length = int(y_length * HOP_LENGTH - HOP_LENGTH + 2)
-    noisier_chunks = _slice(noisier, signal_length)
-    noisy_chunks = _slice(waveform, signal_length)
+    input_chunks = slice_waveform(input_waveform, signal_length)
+    target_chunks = slice_waveform(target_waveform, signal_length)
 
-    for i in range(len(noisier_chunks)):
-        tensor_image = _stft(noisier_chunks[i])
+    for i in range(len(input_chunks)):
+        tensor_image = _stft(input_chunks[i])
         tensor_image = tensor_image.unsqueeze(0)
-        noisier_data.append(tensor_image)
-        noisier_abs.append(tensor_image.abs())
+        input_data.append(tensor_image)
+        input_abs.append(tensor_image.abs())
 
-    for i in range(len(noisy_chunks)):
-        tensor_image = _stft(noisy_chunks[i])
+    for i in range(len(target_chunks)):
+        tensor_image = _stft(target_chunks[i])
         tensor_image = tensor_image.unsqueeze(0)
-        noisy_data.append(tensor_image)
-        noisy_abs.append(tensor_image.abs())
+        target_data.append(tensor_image)
+        target_abs.append(tensor_image.abs())
 
-input_stacked = torch.stack(noisier_abs)
-target_stacked = torch.stack(noisy_abs)
+input_stacked = torch.stack(input_abs)
+target_stacked = torch.stack(target_abs)
 
 normalize_min = torch.min(input_stacked.min(), target_stacked.min())
 normalize_max = torch.max(input_stacked.max(), target_stacked.max())
@@ -88,51 +94,41 @@ def min_max_normalize(tensor, min_val, max_val):
 
 def create_batches(noisier_data, noisy_data, batch_size):
     for i in range(0, len(noisier_data), batch_size):
-        features_batch = noisier_data[i:i + batch_size]
-        labels_batch = noisy_data[i:i + batch_size]
+        features_batch = min_max_normalize(torch.stack(noisier_data[i:i + batch_size]).to(DEVICE), normalize_min, normalize_max)
+        labels_batch = min_max_normalize(torch.stack(noisy_data[i:i + batch_size]).to(DEVICE), normalize_min, normalize_max)
         yield features_batch, labels_batch
 
 
 batch_size = int(os.getenv('BATCH_SIZE', 4))
-batches = list(create_batches(noisier_data, noisy_data, batch_size))
-
-
-def complex_mse_loss(y_true, y_pred):
-    real_loss = nn.MSELoss()(y_true.real, y_pred.real)
-    imag_loss = nn.MSELoss()(y_true.imag, y_pred.imag)
-    return real_loss + imag_loss
-
+batches = list(create_batches(input_data, target_data, batch_size))
 
 gc.collect()
 torch.cuda.empty_cache()
 
-model = DCUnet().to(DEVICE)
+model_type = os.getenv('MODEL_TYPE').lower()
+if model_type == 'dcunet':
+    model = DCUnet().to(DEVICE)
+elif model_type == 'idaae':
+    model = IDAAE().to(DEVICE)
+else:
+    print('Invalid model type')
+    print('Available model types: DCUNet, iDAAE')
+    exit(0)
+
 optimizer = optim.Adam(model.parameters())
 os.makedirs("models", exist_ok=True)
 
-epochs = int(input('Epochs: '))
+epochs = int(os.getenv('EPOCHS', 30))
 for epoch in range(epochs):
-    model.train()
+    epoch_loss = model.train_epoch(batches)
 
-    epoch_loss = 0.0
-    for features_batch, labels_batch in batches:
-        input = min_max_normalize(torch.stack(features_batch).to(DEVICE), normalize_min, normalize_max)
-        label = min_max_normalize(torch.stack(labels_batch).to(DEVICE), normalize_min, normalize_max)
-        output = model(input)
-        loss = complex_mse_loss(output, label)
-        epoch_loss += loss
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+    model.save(epoch + 1, normalize_min, normalize_max)
 
-    torch.save({
-        'model_state_dict': model.state_dict(),
-        'optimizer_state_dict': optimizer.state_dict(),
-        'normalize_min': normalize_min,
-        'normalize_max': normalize_max
-    }, 'models/model_' + str(epoch+1) + '.pth')
-
-    print(f'Epoch {epoch+1}, Loss: {epoch_loss / len(batches)}')
+    print(f'Epoch {epoch + 1}', end=", ")
+    losses = []
+    for name, value in epoch_loss:
+        losses.append(f'{name}: value')
+    print(", ".join(losses))
 
     gc.collect()
     torch.cuda.empty_cache()
