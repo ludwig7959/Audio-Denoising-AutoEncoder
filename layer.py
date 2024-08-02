@@ -10,8 +10,8 @@ class ComplexLinear(nn.Module):
         self.im_linear = nn.Linear(in_features=in_features, out_features=out_features)
 
     def forward(self, x):
-        output_real = self.real_linear(x.real.clone())
-        output_imag = self.im_linear(x.imag.clone())
+        output_real = self.real_linear(x.real)
+        output_imag = self.im_linear(x.imag)
 
         return torch.complex(output_real, output_imag)
 

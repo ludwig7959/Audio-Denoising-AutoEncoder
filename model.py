@@ -228,7 +228,7 @@ class IDAAE(nn.Module):
         return output
 
     def forward(self, x):
-        x_corr = torch.zeros(x.size(), dtype=torch.complex64).to(next(self.parameters()).device)
+        x_corr = torch.zeros(x.size(), dtype=torch.complex64, device=next(self.parameters()).device)
         for m in range(self.M):
             x_corr += self.corrupt(x)
         x_corr /= self.M
@@ -258,7 +258,8 @@ class IDAAE(nn.Module):
 
             reconstruction_loss = self.rec_loss(x_reconstructed, input, loss='MSE')
             encoder_loss = self.discriminator.gen_loss(z_fake)
-            discriminator_loss = self.discriminator.dis_loss(z_fake)
+            with torch.no_grad():
+                discriminator_loss = self.discriminator.dis_loss(z_fake)
 
             autoencoder_loss = reconstruction_loss + 1.0 * encoder_loss
 
@@ -320,14 +321,14 @@ class Discriminator(nn.Module):
         z_fake = z.detach()
         p_fake = self.discriminate(z_fake)
 
-        ones = torch.ones(p_real.size()).to(next(self.parameters()).device)
-        zeros = torch.zeros(p_real.size()).to(next(self.parameters()).device)
+        ones = torch.ones(p_real.size(), device=next(self.parameters()).device)
+        zeros = torch.zeros(p_real.size(), device=next(self.parameters()).device)
 
         return 0.5 * torch.mean(binary_cross_entropy(p_real.real, ones) + binary_cross_entropy(p_real.imag, ones) + binary_cross_entropy(p_fake.real, zeros) + binary_cross_entropy(p_fake.imag, zeros))
 
     def gen_loss(self, z):
         p_fake = self.discriminate(z)
-        ones = torch.ones(p_fake.size()).to(next(self.parameters()).device)
+        ones = torch.ones(p_fake.size(), device=next(self.parameters()).device)
         return torch.mean(binary_cross_entropy(p_fake.real, ones) + binary_cross_entropy(p_fake.imag, ones))
 
 
