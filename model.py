@@ -148,132 +148,71 @@ class IDAAE(nn.Module):
 
     # sigma: Corruption level
     # M: Corruption repeat count
-    def __init__(self, sigma=0.1, M=20):
+    def __init__(self, sigma = 0.1, M = 20):
         super().__init__()
 
         self.sigma = sigma
         self.M = M
 
-        self.conv1 = layer.ComplexConv2d(in_channels=1, out_channels=16, kernel_size=5, padding=2, stride=2)
-        self.activation1 = layer.ComplexReLU()
-        self.conv2 = layer.ComplexConv2d(in_channels=16, out_channels=32, kernel_size=5, padding=2, stride=2)
-        self.activation2 = layer.ComplexReLU()
-        self.conv3 = layer.ComplexConv2d(in_channels=32, out_channels=64, kernel_size=5, padding=2, stride=2)
-        self.activation3 = layer.ComplexReLU()
-        self.conv4 = layer.ComplexConv2d(in_channels=64, out_channels=128, kernel_size=5, padding=2, stride=2)
-        self.activation4 = layer.ComplexReLU()
-        self.linear5 = layer.ComplexLinear(128 * 64 * 64, 100)
-
-        self.linear6 = layer.ComplexLinear(100, 128 * 64 * 64)
-        self.activation6 = layer.ComplexReLU()
-        self.conv7 = layer.ComplexConvTranspose2d(in_channels=128, out_channels=64, kernel_size=3, padding=1, stride=2, output_padding=1)
-        self.activation7 = layer.ComplexReLU()
-        self.conv8 = layer.ComplexConvTranspose2d(in_channels=64, out_channels=32, kernel_size=3, padding=1, stride=2, output_padding=1)
-        self.activation8 = layer.ComplexReLU()
-        self.conv9 = layer.ComplexConvTranspose2d(in_channels=32, out_channels=16, kernel_size=3, padding=1, stride=2, output_padding=1)
-        self.activation9 = layer.ComplexReLU()
-        self.conv10 = layer.ComplexConvTranspose2d(in_channels=16, out_channels=1, kernel_size=3, padding=1, stride=2, output_padding=1)
-        self.activation10 = layer.ComplexSigmoid()
-
-        self.discriminator = Discriminator(prior=self.norm_prior)
+        self.autoencoder = self.AutoEncoder2d()
+        self.discriminator = self.Discriminator()
         self.linear_svm = LinearSVM(0.5)
 
-        self.optimizer = optim.RMSprop(self.parameters())
+        self.optimizer_autoencoder = optim.RMSprop(self.autoencoder.parameters())
         self.optimizer_discriminator = optim.RMSprop(self.discriminator.parameters())
-
-    def norm_prior(self, noSamples=25):
-        z = torch.rand(noSamples, 100)
-        return z
-
-    def encode(self, x):
-        x1 = self.activation1(self.conv1(x))
-        x2 = self.activation2(self.conv2(x1))
-        x3 = self.activation3(self.conv3(x2))
-        x4 = self.activation4(self.conv4(x3))
-        x5 = self.linear5(torch.complex(x4.real.view(x4.size(0), -1), x4.imag.view(x4.size(0), -1)))
-
-        return x5
-
-    def corrupt(self, x):
-        noise_real = self.sigma * torch.rand(x.real.size())
-        noise_imag = self.sigma * torch.rand(x.imag.size())
-
-        return torch.complex(x.real + noise_real.to(x.device), x.imag + noise_imag.to(x.device))
-
-    def sample_z(self, noSamples=25):
-        z_real = self.norm_prior(noSamples=noSamples)
-        z_imag = self.norm_prior(noSamples=noSamples)
-
-        return torch.complex(z_real, z_imag)
-
-    def decode(self, x, original_x):
-        x6 = self.activation6(self.linear6(x))
-        x7 = self.activation7(self.conv7(torch.complex(x6.real.view(x6.size(0), -1, 64, 64), x6.imag.view(x6.size(0), -1, 64, 64))))
-        x8 = self.activation8(self.conv8(x7))
-        x9 = self.activation8(self.conv9(x8))
-        x10 = self.activation10(self.conv10(x9))
-
-        mask_phase = x10 / (torch.abs(x10) + 1e-8)
-        mask_magnitude = torch.sigmoid(torch.abs(x10))
-        mask = mask_phase * mask_magnitude
-
-        mask_real = mask.real
-        mask_imag = mask.imag
-
-        output_real = mask_real * original_x.real - mask_imag * original_x.imag
-        output_imag = mask_real * original_x.imag + mask_imag * original_x.real
-
-        output = torch.complex(output_real, output_imag)
-
-        return output
-
-    def forward(self, x):
-        x_corr = torch.zeros(x.size(), dtype=torch.complex64, device=next(self.parameters()).device)
-        for m in range(self.M):
-            x_corr += self.corrupt(x)
-        x_corr /= self.M
-        z = self.encode(x_corr)
-        return z, self.decode(z, x)
-
-    def rec_loss(self, rec_x, x, loss='BCE'):
-        if loss == 'BCE':
-            return torch.mean(binary_cross_entropy(rec_x.real, x.real, size_average=True) + binary_cross_entropy(rec_x.imag, x.imag, size_average=True))
-        elif loss == 'MSE':
-            return torch.mean(complex_mse_loss(rec_x, x))
-        else:
-            print('unknown loss: '+loss)
 
     def train_epoch(self, batches):
         loss = {'Encoder Loss': [], 'Rec. Loss': [], 'Dis. Loss': []}
         epoch_loss_encoder = 0.0
         epoch_loss_reconstruction = 0.0
         epoch_loss_discriminator = 0.0
+
+        torch.autograd.set_detect_anomaly(True)
         for features_batch, labels_batch in batches:
-            self.train()
+            self.autoencoder.train()
+            self.discriminator.train()
 
             input = features_batch.to(next(self.parameters()).device)
             label = labels_batch.to(next(self.parameters()).device)
+            corrupted = self.corrupt(input)
 
-            z_fake, x_reconstructed = self.forward(input)
-
-            reconstruction_loss = self.rec_loss(x_reconstructed, input, loss='MSE')
-            encoder_loss = self.discriminator.gen_loss(z_fake)
-            with torch.no_grad():
-                discriminator_loss = self.discriminator.dis_loss(z_fake)
-
-            autoencoder_loss = reconstruction_loss + 1.0 * encoder_loss
+            z_fake = self.autoencoder.encode(corrupted)
+            z_real = self.sample_z(z_fake.size(0))
 
             self.optimizer_discriminator.zero_grad()
+            output_real = self.discriminator(z_real)
+            output_fake = self.discriminator(z_fake.detach())
+            discriminator_loss = 0.5 * torch.mean(
+                binary_cross_entropy(output_real.real, torch.ones_like(output_real.real, device=next(self.parameters()).device)) +
+                binary_cross_entropy(output_real.imag, torch.ones_like(output_real.imag, device=next(self.parameters()).device)) +
+                binary_cross_entropy(output_fake.real, torch.zeros_like(output_fake.real)) +
+                binary_cross_entropy(output_fake.imag, torch.zeros_like(output_fake.imag)))
             discriminator_loss.backward()
             self.optimizer_discriminator.step()
 
-            self.optimizer.zero_grad()
+            self.optimizer_autoencoder.zero_grad()
+            z_fake_approx = 0
+            for _ in range(self.M):
+                x_tilde = self.corrupt(input)
+                z_tilde = self.autoencoder.encode(x_tilde)
+                z_fake_approx += z_tilde
+            z_fake_approx /= self.M
+            output_fake = self.discriminator(z_fake_approx)
+            encoder_loss = torch.mean(
+                binary_cross_entropy(output_fake.real, torch.ones_like(output_fake.real, device=next(self.parameters()).device)) +
+                binary_cross_entropy(output_fake.imag, torch.ones_like(output_fake.imag, device=next(self.parameters()).device)))
+
+            reconstructed = self.autoencoder.decode(z_fake, corrupted)
+            reconstruction_loss = torch.mean(complex_mse_loss(reconstructed, input))
+            autoencoder_loss = encoder_loss + reconstruction_loss
             autoencoder_loss.backward()
-            self.optimizer.step()
+            self.optimizer_autoencoder.step()
 
             epoch_loss_encoder += encoder_loss.item()
             epoch_loss_reconstruction += reconstruction_loss.item()
             epoch_loss_discriminator += discriminator_loss.item()
+
+        torch.autograd.set_detect_anomaly(False)
 
         loss['Encoder Loss'].append(epoch_loss_encoder)
         loss['Rec. Loss'].append(epoch_loss_reconstruction)
@@ -281,55 +220,107 @@ class IDAAE(nn.Module):
 
         return loss
 
+    def sample_z(self, num_samples = 25):
+        z_real = torch.randn(num_samples, 100)
+        z_imag = torch.randn(num_samples, 100)
+
+        return torch.complex(z_real, z_imag).to(next(self.parameters()).device)
+
+    def corrupt(self, x):
+        noise_real = self.sigma * torch.rand(x.real.size())
+        noise_imag = self.sigma * torch.rand(x.imag.size())
+
+        return torch.complex(x.real + noise_real.to(x.device), x.imag + noise_imag.to(x.device))
+
     def save(self, epoch, min, max):
         torch.save({
             'model_state_dict': self.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
+            'optimizer_autoencoder_state_dict': self.optimizer_autoencoder.state_dict(),
             'optimizer_discriminator_state_dict': self.optimizer_discriminator.state_dict(),
             'normalize_min': min,
             'normalize_max': max
         }, 'models/idaae_' + str(epoch + 1) + '.pth')
 
+    class AutoEncoder2d(nn.Module):
+        def __init__(self):
+            super().__init__()
 
-class Discriminator(nn.Module):
-    def __init__(self, prior):
-        super().__init__()
+            self.conv1 = layer.ComplexConv2d(in_channels=1, out_channels=16, kernel_size=5, padding=2, stride=2)
+            self.activation1 = layer.ComplexReLU()
+            self.conv2 = layer.ComplexConv2d(in_channels=16, out_channels=32, kernel_size=5, padding=2, stride=2)
+            self.activation2 = layer.ComplexReLU()
+            self.conv3 = layer.ComplexConv2d(in_channels=32, out_channels=64, kernel_size=5, padding=2, stride=2)
+            self.activation3 = layer.ComplexReLU()
+            self.conv4 = layer.ComplexConv2d(in_channels=64, out_channels=128, kernel_size=5, padding=2, stride=2)
+            self.activation4 = layer.ComplexReLU()
+            self.linear5 = layer.ComplexLinear(128 * 64 * 64, 100)
 
-        self.prior = prior
+            self.linear6 = layer.ComplexLinear(100, 128 * 64 * 64)
+            self.activation6 = layer.ComplexReLU()
+            self.conv7 = layer.ComplexConvTranspose2d(in_channels=128, out_channels=64, kernel_size=3, padding=1, stride=2, output_padding=1)
+            self.activation7 = layer.ComplexReLU()
+            self.conv8 = layer.ComplexConvTranspose2d(in_channels=64, out_channels=32, kernel_size=3, padding=1, stride=2, output_padding=1)
+            self.activation8 = layer.ComplexReLU()
+            self.conv9 = layer.ComplexConvTranspose2d(in_channels=32, out_channels=16, kernel_size=3, padding=1, stride=2, output_padding=1)
+            self.activation9 = layer.ComplexReLU()
+            self.conv10 = layer.ComplexConvTranspose2d(in_channels=16, out_channels=1, kernel_size=3, padding=1, stride=2, output_padding=1)
+            self.activation10 = layer.ComplexSigmoid()
 
-        self.linear1 = layer.ComplexLinear(100, 1000)
-        self.activation1 = layer.ComplexReLU()
-        self.linear2 = layer.ComplexLinear(1000, 1000)
-        self.activation2 = layer.ComplexReLU()
-        self.linear3 = layer.ComplexLinear(1000, 1)
-        self.activation3 = layer.ComplexSigmoid()
+        def encode(self, x):
+            x = self.activation1(self.conv1(x))
+            x = self.activation2(self.conv2(x))
+            x = self.activation3(self.conv3(x))
+            x = self.activation4(self.conv4(x))
+            x = self.linear5(torch.complex(x.real.view(x.size(0), -1), x.imag.view(x.size(0), -1)))
 
-    def discriminate(self, z):
-        z = self.activation1(self.linear1(z))
-        z = self.activation2(self.linear2(z))
-        z = self.activation3(self.linear3(z))
+            return x
 
-        return z
+        def decode(self, x, original_x):
+            x = self.activation6(self.linear6(x))
+            x = self.activation7(self.conv7(torch.complex(x.real.view(x.size(0), -1, 64, 64), x.imag.view(x.size(0), -1, 64, 64))))
+            x = self.activation8(self.conv8(x))
+            x = self.activation8(self.conv9(x))
+            x = self.activation10(self.conv10(x))
 
-    def forward(self, z):
-        return self.discriminate(z)
+            mask_phase = x / (torch.abs(x) + 1e-8)
+            mask_magnitude = torch.sigmoid(torch.abs(x))
+            mask = mask_phase * mask_magnitude
 
-    def dis_loss(self, z):
-        z_real = torch.complex(self.prior(z.size(0)), self.prior(z.size(0))).to(next(self.parameters()).device)
-        p_real = self.discriminate(z_real)
+            mask_real = mask.real
+            mask_imag = mask.imag
 
-        z_fake = z.detach()
-        p_fake = self.discriminate(z_fake)
+            output_real = mask_real * original_x.real - mask_imag * original_x.imag
+            output_imag = mask_real * original_x.imag + mask_imag * original_x.real
 
-        ones = torch.ones(p_real.size(), device=next(self.parameters()).device)
-        zeros = torch.zeros(p_real.size(), device=next(self.parameters()).device)
+            output = torch.complex(output_real, output_imag)
 
-        return 0.5 * torch.mean(binary_cross_entropy(p_real.real, ones) + binary_cross_entropy(p_real.imag, ones) + binary_cross_entropy(p_fake.real, zeros) + binary_cross_entropy(p_fake.imag, zeros))
+            return output
 
-    def gen_loss(self, z):
-        p_fake = self.discriminate(z)
-        ones = torch.ones(p_fake.size(), device=next(self.parameters()).device)
-        return torch.mean(binary_cross_entropy(p_fake.real, ones) + binary_cross_entropy(p_fake.imag, ones))
+        def forward(self, x):
+            z = self.encode(x)
+            z = self.decode(z, x)
+            return z
+
+    class Discriminator(nn.Module):
+        def __init__(self):
+            super().__init__()
+
+            self.linear1 = layer.ComplexLinear(100, 1000)
+            self.activation1 = layer.ComplexReLU()
+            self.linear2 = layer.ComplexLinear(1000, 1000)
+            self.activation2 = layer.ComplexReLU()
+            self.linear3 = layer.ComplexLinear(1000, 1)
+            self.activation3 = layer.ComplexSigmoid()
+
+        def discriminate(self, z):
+            z = self.activation1(self.linear1(z))
+            z = self.activation2(self.linear2(z))
+            z = self.activation3(self.linear3(z))
+
+            return z
+
+        def forward(self, z):
+            return self.discriminate(z)
 
 
 class LinearSVM(nn.Module):

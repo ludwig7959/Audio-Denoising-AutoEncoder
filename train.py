@@ -15,12 +15,7 @@ load_dotenv()
 
 N_FFT = int(os.getenv('N_FFT', 2046))
 HOP_LENGTH = int(os.getenv('HOP_LENGTH', 512))
-if torch.cuda.is_available():
-    DEVICE = torch.device('cuda')
-elif torch.backends.mps.is_available():
-    DEVICE = torch.device('mps')
-else:
-    DEVICE = torch.device('cpu')
+DEVICE = torch.device(os.getenv('DEVICE'))
 
 
 def _stft(waveform):
@@ -54,13 +49,9 @@ for input_file in input_files:
     input_waveform, input_sr = torchaudio.load(input_file)
     target_waveform, target_sr = torchaudio.load(target_file)
 
-    print(input_waveform.shape)
-
     # Change stereo audio to monoaudio
     if input_waveform.size(0) > 1:
         input_waveform = torch.mean(input_waveform, dim=0, keepdim=True)
-
-        print(input_waveform.shape)
     if target_waveform.size(0) > 1:
         target_waveform = torch.mean(target_waveform, dim=0, keepdim=True)
 
