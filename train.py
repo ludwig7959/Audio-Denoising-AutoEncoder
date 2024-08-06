@@ -10,7 +10,7 @@ from torch import optim
 from torchvision.transforms import transforms
 
 from function import slice_waveform
-from model import DCUnet, IDAAE
+from model import DCUnet, DAAE
 
 load_dotenv()
 
@@ -103,11 +103,11 @@ torch.cuda.empty_cache()
 model_type = os.getenv('MODEL_TYPE').lower()
 if model_type == 'dcunet':
     model = DCUnet().to(DEVICE)
-elif model_type == 'idaae':
-    model = IDAAE().to(DEVICE)
+elif model_type == 'daae':
+    model = DAAE().to(DEVICE)
 else:
     print('Invalid model type')
-    print('Available model types: DCUNet, iDAAE')
+    print('Available model types: DCUNet, DAAE')
     exit(0)
 
 optimizer = optim.Adam(model.parameters())
