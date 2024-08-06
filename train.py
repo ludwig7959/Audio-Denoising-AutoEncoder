@@ -1,9 +1,11 @@
 import gc
 import os
+from datetime import datetime
 
 import torch
 import torchaudio
 from torch import optim
+from torch.utils.tensorboard import SummaryWriter
 from torchvision.transforms import transforms
 
 import config
@@ -112,9 +114,12 @@ class EarlyStopping:
                 self.early_stop = True
 
 
-optimizer = optim.Adam(model.parameters())
 os.makedirs("models", exist_ok=True)
+os.makedirs("summary", exist_ok=True)
+
+optimizer = optim.Adam(model.parameters())
 early_stopping = EarlyStopping(config.EARLY_STOPPING_LOSS, config.EARLY_STOPPING_PATIENCE)
+summary_writer = SummaryWriter(log_dir=f'summary/summary_{datetime.now().strftime("%Y%m%d-%H%M%S")}')
 
 for epoch in range(config.EPOCHS):
     epoch_loss = model.train_epoch(batches)
@@ -122,19 +127,24 @@ for epoch in range(config.EPOCHS):
     print(f'Epoch {epoch + 1}', end=", ")
     losses = []
     for name, value in epoch_loss.items():
+        summary_writer.add_scalar(f'Loss/{name}', value, epoch)
         losses.append(f'{name}: {value}')
     print(", ".join(losses))
 
+    # Saving each epoch when set to true
     if config.SAVE_EACH_EPOCH:
         model.save(str(epoch + 1), normalize_min, normalize_max)
 
+    # Early stopping
     early_stopping(epoch_loss)
     if config.EARLY_STOPPING and early_stopping.early_stop:
         print('Early Stopping...')
         model.save(f'{epoch + 1}_early_stopped', normalize_min, normalize_max)
+        summary_writer.close()
         exit(0)
 
     gc.collect()
     torch.cuda.empty_cache()
 
 model.save('conclusion', normalize_min, normalize_max)
+summary_writer.close()
