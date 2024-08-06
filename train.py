@@ -1,5 +1,6 @@
 import gc
 import os
+from distutils.util import strtobool
 from pathlib import Path
 
 import torch
@@ -26,22 +27,25 @@ def _stft(waveform):
     return stft_resized
 
 
-input_audio_path = Path(os.getenv('INPUT_PATH', 'input'))
-if not input_audio_path.is_dir():
+INPUT_AUDIO_PATH = Path(os.getenv('INPUT_PATH', 'input'))
+if not INPUT_AUDIO_PATH.is_dir():
+
     print('Input path doesn''t exist')
     exit(0)
-target_audio_path = Path(os.getenv('TARGET_PATH', 'target'))
-if not target_audio_path.is_dir():
+TARGET_AUDIO_PATH = Path(os.getenv('TARGET_PATH', 'target'))
+if not TARGET_AUDIO_PATH.is_dir():
     print('Target path doesn''t exist')
     exit(0)
 
-input_files = sorted(list(input_audio_path.rglob('*.wav')))
+NORMALIZATION = bool(strtobool(os.getenv('NORMALIZATION', 'True')))
+
+input_files = sorted(list(INPUT_AUDIO_PATH.rglob('*.wav')))
 input_data = []
 target_data = []
 input_abs = []
 target_abs = []
 for input_file in input_files:
-    target_file = target_audio_path / input_file.name
+    target_file = TARGET_AUDIO_PATH / input_file.name
     if not target_file.is_file():
         print(f'Skipping {input_file} because there is no matching target.')
         continue
@@ -75,8 +79,8 @@ for input_file in input_files:
 input_stacked = torch.stack(input_abs)
 target_stacked = torch.stack(target_abs)
 
-normalize_min = torch.min(input_stacked.min(), target_stacked.min())
-normalize_max = torch.max(input_stacked.max(), target_stacked.max())
+normalize_min = torch.min(input_stacked.min(), target_stacked.min()) if NORMALIZATION else 0.0
+normalize_max = torch.max(input_stacked.max(), target_stacked.max()) if NORMALIZATION else 1.0
 
 
 def min_max_normalize(tensor, min_val, max_val):
@@ -117,8 +121,8 @@ for epoch in range(epochs):
 
     print(f'Epoch {epoch + 1}', end=", ")
     losses = []
-    for name, value in epoch_loss:
-        losses.append(f'{name}: value')
+    for name, value in epoch_loss.items():
+        losses.append(f'{name}: {value}')
     print(", ".join(losses))
 
     gc.collect()

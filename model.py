@@ -119,7 +119,7 @@ class DCUnet(nn.Module):
         return output
 
     def train_epoch(self, batches):
-        loss = {'Loss': []}
+        loss = {'Loss': 0.0}
         epoch_loss = 0.0
         for features_batch, labels_batch in batches:
             self.train()
@@ -133,7 +133,7 @@ class DCUnet(nn.Module):
             loss.backward()
             self.optimizer.step()
 
-        loss['Loss'].append(epoch_loss)
+        loss['Loss'] = epoch_loss
 
     def save(self, epoch, min, max):
         torch.save({
@@ -141,7 +141,7 @@ class DCUnet(nn.Module):
             'optimizer_state_dict': self.optimizer.state_dict(),
             'normalize_min': min,
             'normalize_max': max
-        }, 'models/dcunet_' + str(epoch + 1) + '.pth')
+        }, 'models/dcunet_' + str(epoch) + '.pth')
 
 
 class IDAAE(nn.Module):
@@ -162,18 +162,16 @@ class IDAAE(nn.Module):
         self.optimizer_discriminator = optim.RMSprop(self.discriminator.parameters())
 
     def train_epoch(self, batches):
-        loss = {'Encoder Loss': [], 'Rec. Loss': [], 'Dis. Loss': []}
+        loss = {'Encoder Loss': 0.0, 'Rec. Loss': 0.0, 'Dis. Loss': 0.0}
         epoch_loss_encoder = 0.0
         epoch_loss_reconstruction = 0.0
         epoch_loss_discriminator = 0.0
 
-        torch.autograd.set_detect_anomaly(True)
         for features_batch, labels_batch in batches:
             self.autoencoder.train()
             self.discriminator.train()
 
             input = features_batch.to(next(self.parameters()).device)
-            label = labels_batch.to(next(self.parameters()).device)
             corrupted = self.corrupt(input)
 
             z_fake = self.autoencoder.encode(corrupted)
@@ -183,10 +181,8 @@ class IDAAE(nn.Module):
             output_real = self.discriminator(z_real)
             output_fake = self.discriminator(z_fake.detach())
             discriminator_loss = 0.5 * torch.mean(
-                binary_cross_entropy(output_real.real, torch.ones_like(output_real.real, device=next(self.parameters()).device)) +
-                binary_cross_entropy(output_real.imag, torch.ones_like(output_real.imag, device=next(self.parameters()).device)) +
-                binary_cross_entropy(output_fake.real, torch.zeros_like(output_fake.real)) +
-                binary_cross_entropy(output_fake.imag, torch.zeros_like(output_fake.imag)))
+                binary_cross_entropy(output_real, torch.ones_like(output_real, device=next(self.parameters()).device)) +
+                binary_cross_entropy(output_fake, torch.zeros_like(output_fake)))
             discriminator_loss.backward()
             self.optimizer_discriminator.step()
 
@@ -199,8 +195,7 @@ class IDAAE(nn.Module):
             z_fake_approx /= self.M
             output_fake = self.discriminator(z_fake_approx)
             encoder_loss = torch.mean(
-                binary_cross_entropy(output_fake.real, torch.ones_like(output_fake.real, device=next(self.parameters()).device)) +
-                binary_cross_entropy(output_fake.imag, torch.ones_like(output_fake.imag, device=next(self.parameters()).device)))
+                binary_cross_entropy(output_fake, torch.ones_like(output_fake, device=next(self.parameters()).device)))
 
             reconstructed = self.autoencoder.decode(z_fake, corrupted)
             reconstruction_loss = torch.mean(complex_mse_loss(reconstructed, input))
@@ -212,17 +207,15 @@ class IDAAE(nn.Module):
             epoch_loss_reconstruction += reconstruction_loss.item()
             epoch_loss_discriminator += discriminator_loss.item()
 
-        torch.autograd.set_detect_anomaly(False)
-
-        loss['Encoder Loss'].append(epoch_loss_encoder)
-        loss['Rec. Loss'].append(epoch_loss_reconstruction)
-        loss['Dis. Loss'].append(epoch_loss_discriminator)
+        loss['Encoder Loss'] = epoch_loss_encoder
+        loss['Rec. Loss'] = epoch_loss_reconstruction
+        loss['Dis. Loss'] = epoch_loss_discriminator
 
         return loss
 
-    def sample_z(self, num_samples = 25):
-        z_real = torch.randn(num_samples, 100)
-        z_imag = torch.randn(num_samples, 100)
+    def sample_z(self, num_samples=25, mean=0.0, std=1.0):
+        z_real = std * torch.randn(num_samples, 100) + mean
+        z_imag = std * torch.randn(num_samples, 100) + mean
 
         return torch.complex(z_real, z_imag).to(next(self.parameters()).device)
 
@@ -239,7 +232,7 @@ class IDAAE(nn.Module):
             'optimizer_discriminator_state_dict': self.optimizer_discriminator.state_dict(),
             'normalize_min': min,
             'normalize_max': max
-        }, 'models/idaae_' + str(epoch + 1) + '.pth')
+        }, 'models/idaae_' + str(epoch) + '.pth')
 
     class AutoEncoder2d(nn.Module):
         def __init__(self):
@@ -305,15 +298,15 @@ class IDAAE(nn.Module):
         def __init__(self):
             super().__init__()
 
-            self.linear1 = layer.ComplexLinear(100, 1000)
-            self.activation1 = layer.ComplexReLU()
-            self.linear2 = layer.ComplexLinear(1000, 1000)
-            self.activation2 = layer.ComplexReLU()
-            self.linear3 = layer.ComplexLinear(1000, 1)
-            self.activation3 = layer.ComplexSigmoid()
+            self.linear1 = nn.Linear(200, 2000)
+            self.activation1 = nn.ReLU()
+            self.linear2 = nn.Linear(2000, 2000)
+            self.activation2 = nn.ReLU()
+            self.linear3 = nn.Linear(2000, 1)
+            self.activation3 = nn.Sigmoid()
 
         def discriminate(self, z):
-            z = self.activation1(self.linear1(z))
+            z = self.activation1(self.linear1(torch.cat((torch.abs(z), torch.angle(z)), dim=1)))
             z = self.activation2(self.linear2(z))
             z = self.activation3(self.linear3(z))
 
