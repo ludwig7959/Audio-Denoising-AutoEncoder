@@ -26,3 +26,11 @@ def complex_mse_loss(y_true, y_pred):
     real_loss = nn.MSELoss()(y_true.real, y_pred.real)
     imag_loss = nn.MSELoss()(y_true.imag, y_pred.imag)
     return real_loss + imag_loss
+
+
+def min_max_normalize(tensor, min_val, max_val):
+    return (tensor - min_val) / (max_val - min_val)
+
+
+def min_max_denormalize(tensor, min_val, max_val):
+    return tensor * (max_val - min_val) + min_val
