@@ -119,7 +119,7 @@ class DCUnet(nn.Module):
         return output
 
     def train_epoch(self, batches):
-        loss = {'Loss': 0.0}
+        loss = {'loss': 0.0}
         epoch_loss = 0.0
         for features_batch, labels_batch in batches:
             self.train()
@@ -159,7 +159,7 @@ class DAAE(nn.Module):
         self.optimizer_discriminator = optim.RMSprop(self.discriminator.parameters())
 
     def train_epoch(self, batches):
-        loss = {'Encoder Loss': 0.0, 'Rec. Loss': 0.0, 'Dis. Loss': 0.0}
+        loss = {'generator': 0.0, 'reconstruction': 0.0, 'discriminator': 0.0}
         epoch_loss_generator = 0.0
         epoch_loss_reconstruction = 0.0
         epoch_loss_discriminator = 0.0

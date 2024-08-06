@@ -7,3 +7,4 @@ soundfile
 python-dotenv
 scikit-image
 torchvision
+tensorboard
