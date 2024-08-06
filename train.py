@@ -1,51 +1,37 @@
 import gc
 import os
-from distutils.util import strtobool
-from pathlib import Path
 
 import torch
 import torchaudio
-from dotenv import load_dotenv
 from torch import optim
 from torchvision.transforms import transforms
 
-from function import slice_waveform
+import config
+from function import slice_waveform, min_max_normalize
 from model import DCUnet, DAAE
 
-load_dotenv()
-
-N_FFT = int(os.getenv('N_FFT', 2046))
-HOP_LENGTH = int(os.getenv('HOP_LENGTH', 512))
-DEVICE = torch.device(os.getenv('DEVICE'))
-
-
 def _stft(waveform):
-    stft = torch.stft(waveform, n_fft=N_FFT, hop_length=HOP_LENGTH, window=torch.hamming_window(window_length=N_FFT),
+    stft = torch.stft(waveform, n_fft=config.N_FFT, hop_length=config.HOP_LENGTH, window=torch.hamming_window(window_length=config.N_FFT),
                       return_complex=True, center=True)
     stft_resized = transforms.Resize((1024, 1024))(stft.squeeze())
 
     return stft_resized
 
-
-INPUT_AUDIO_PATH = Path(os.getenv('INPUT_PATH', 'input'))
-if not INPUT_AUDIO_PATH.is_dir():
-
+if not config.INPUT_AUDIO_PATH.is_dir():
     print('Input path doesn''t exist')
     exit(0)
-TARGET_AUDIO_PATH = Path(os.getenv('TARGET_PATH', 'target'))
-if not TARGET_AUDIO_PATH.is_dir():
+if not config.TARGET_AUDIO_PATH.is_dir():
     print('Target path doesn''t exist')
     exit(0)
 
-NORMALIZATION = bool(strtobool(os.getenv('NORMALIZATION', 'True')))
 
-input_files = sorted(list(INPUT_AUDIO_PATH.rglob('*.wav')))
+input_files = sorted(list(config.INPUT_AUDIO_PATH.rglob('*.wav')))
 input_data = []
 target_data = []
 input_abs = []
 target_abs = []
 for input_file in input_files:
-    target_file = TARGET_AUDIO_PATH / input_file.name
+    target_file = config.TARGET_AUDIO_PATH / input_file.name
     if not target_file.is_file():
         print(f'Skipping {input_file} because there is no matching target.')
         continue
@@ -59,8 +45,8 @@ for input_file in input_files:
     if target_waveform.size(0) > 1:
         target_waveform = torch.mean(target_waveform, dim=0, keepdim=True)
 
-    y_length = int(N_FFT / 2 + 1)
-    signal_length = int(y_length * HOP_LENGTH - HOP_LENGTH + 2)
+    y_length = int(config.N_FFT / 2 + 1)
+    signal_length = int(y_length * config.HOP_LENGTH - config.HOP_LENGTH + 2)
     input_chunks = slice_waveform(input_waveform, signal_length)
     target_chunks = slice_waveform(target_waveform, signal_length)
 
@@ -79,12 +65,8 @@ for input_file in input_files:
 input_stacked = torch.stack(input_abs)
 target_stacked = torch.stack(target_abs)
 
-normalize_min = torch.min(input_stacked.min(), target_stacked.min()) if NORMALIZATION else 0.0
-normalize_max = torch.max(input_stacked.max(), target_stacked.max()) if NORMALIZATION else 1.0
-
-
-def min_max_normalize(tensor, min_val, max_val):
-    return (tensor - min_val) / (max_val - min_val)
+normalize_min = torch.min(input_stacked.min(), target_stacked.min()) if config.NORMALIZATION else 0.0
+normalize_max = torch.max(input_stacked.max(), target_stacked.max()) if config.NORMALIZATION else 1.0
 
 
 def create_batches(input_data, target_data, batch_size):
@@ -94,30 +76,48 @@ def create_batches(input_data, target_data, batch_size):
         yield features_batch, labels_batch
 
 
-batch_size = int(os.getenv('BATCH_SIZE', 4))
-batches = list(create_batches(input_data, target_data, batch_size))
+batches = list(create_batches(input_data, target_data, config.BATCH_SIZE))
 
 gc.collect()
 torch.cuda.empty_cache()
 
-model_type = os.getenv('MODEL_TYPE').lower()
-if model_type == 'dcunet':
-    model = DCUnet().to(DEVICE)
-elif model_type == 'daae':
-    model = DAAE().to(DEVICE)
+if config.MODEL_TYPE == 'dcunet':
+    model = DCUnet().to(config.DEVICE)
+elif config.MODEL_TYPE == 'daae':
+    model = DAAE().to(config.DEVICE)
 else:
     print('Invalid model type')
     print('Available model types: DCUNet, DAAE')
     exit(0)
 
+class EarlyStopping:
+    def __init__(self, loss_type='loss', patience=5, min_delta=0):
+        self.loss_type = loss_type
+        self.patience = patience
+        self.min_delta = min_delta
+        self.counter = 0
+        self.best = None
+        self.early_stop = False
+
+    def __call__(self, losses):
+        val_loss = losses[self.loss_type]
+        if self.best is None:
+            self.best = val_loss
+        elif val_loss < self.best - self.min_delta:
+            self.best = val_loss
+            self.counter = 0
+        else:
+            self.counter += 1
+            if self.counter >= self.patience:
+                self.early_stop = True
+
+
 optimizer = optim.Adam(model.parameters())
 os.makedirs("models", exist_ok=True)
+early_stopping = EarlyStopping(config.EARLY_STOPPING_LOSS, config.EARLY_STOPPING_PATIENCE)
 
-epochs = int(os.getenv('EPOCHS', 30))
-for epoch in range(epochs):
+for epoch in range(config.EPOCHS):
     epoch_loss = model.train_epoch(batches)
-
-    model.save(epoch + 1, normalize_min, normalize_max)
 
     print(f'Epoch {epoch + 1}', end=", ")
     losses = []
@@ -125,5 +125,16 @@ for epoch in range(epochs):
         losses.append(f'{name}: {value}')
     print(", ".join(losses))
 
+    if config.SAVE_EACH_EPOCH:
+        model.save(str(epoch + 1), normalize_min, normalize_max)
+
+    early_stopping(epoch_loss)
+    if config.EARLY_STOPPING and early_stopping.early_stop:
+        print('Early Stopping...')
+        model.save(f'{epoch + 1}_early_stopped', normalize_min, normalize_max)
+        exit(0)
+
     gc.collect()
     torch.cuda.empty_cache()
+
+model.save('conclusion', normalize_min, normalize_max)

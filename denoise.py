@@ -1,5 +1,4 @@
 import gc
-import math
 import os
 
 import numpy as np
@@ -9,7 +8,9 @@ import soundfile as sf
 from dotenv import load_dotenv
 from torchvision.transforms import transforms
 
+from function import slice_waveform, min_max_normalize, min_max_denormalize
 from model import DCUnet
+
 
 load_dotenv()
 
@@ -24,23 +25,6 @@ else:
     DEVICE = torch.device('cpu')
 
 
-def _slice(waveform, length):
-    waveform = waveform.numpy()
-    num_chunks = math.ceil(waveform.shape[1] / length)
-    chunks = []
-
-    for i in range(num_chunks):
-        start = i * length
-        end = min((i + 1) * length, waveform.shape[1])
-        chunk = waveform[:, start:end]
-        if chunk.shape[1] < length:
-            chunk = np.pad(chunk, ((0, 0), (0, length - chunk.shape[1])), mode='constant', constant_values=0)
-
-        chunks.append(torch.from_numpy(chunk))
-
-    return chunks
-
-
 def preprocess_audio(file):
     waveform, sr = torchaudio.load(file)
     audio_length = waveform.size(1)
@@ -51,7 +35,7 @@ def preprocess_audio(file):
     stfts = []
     shape = (0, 0)
 
-    sliced = _slice(waveform, slice_length)
+    sliced = slice_waveform(waveform, slice_length)
     for i in range(len(sliced)):
         stft = torch.stft(sliced[i].to(DEVICE), n_fft=N_FFT, hop_length=HOP_LENGTH, window=torch.hamming_window(window_length=N_FFT).to(DEVICE), return_complex=True)
         shape = stft.squeeze().shape
@@ -59,14 +43,6 @@ def preprocess_audio(file):
         stfts.append(stft_resized)
 
     return stfts, sr, shape, audio_length
-
-
-def min_max_normalize(tensor, min_val, max_val):
-    return (tensor - min_val) / (max_val - min_val)
-
-
-def min_max_denormalize(tensor, min_val, max_val):
-    return tensor * (max_val - min_val) + min_val
 
 
 gc.collect()

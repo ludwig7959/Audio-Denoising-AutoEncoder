@@ -133,15 +133,15 @@ class DCUnet(nn.Module):
             loss.backward()
             self.optimizer.step()
 
-        loss['Loss'] = epoch_loss
+        loss['loss'] = epoch_loss
 
-    def save(self, epoch, min, max):
+    def save(self, name, min, max):
         torch.save({
             'model_state_dict': self.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
             'normalize_min': min,
             'normalize_max': max
-        }, 'models/dcunet_' + str(epoch) + '.pth')
+        }, 'models/dcunet_' + name + '.pth')
 
 
 class DAAE(nn.Module):
@@ -160,7 +160,7 @@ class DAAE(nn.Module):
 
     def train_epoch(self, batches):
         loss = {'Encoder Loss': 0.0, 'Rec. Loss': 0.0, 'Dis. Loss': 0.0}
-        epoch_loss_encoder = 0.0
+        epoch_loss_generator = 0.0
         epoch_loss_reconstruction = 0.0
         epoch_loss_discriminator = 0.0
 
@@ -176,7 +176,7 @@ class DAAE(nn.Module):
             self.optimizer_discriminator.zero_grad()
             discriminated_real = self.discriminator(input)
             discriminated_fake = self.discriminator(z_fake.detach())
-            discriminator_loss = 0.5 * torch.mean(
+            discriminator_loss = 0.2 * torch.mean(
                 binary_cross_entropy(discriminated_real, torch.ones_like(discriminated_real, device=next(self.parameters()).device)) +
                 binary_cross_entropy(discriminated_fake, torch.zeros_like(discriminated_fake)))
             discriminator_loss.backward(retain_graph=True)
@@ -186,19 +186,19 @@ class DAAE(nn.Module):
 
             reconstruction_loss = complex_mse_loss(input, z_fake)
             g_discriminated_fake = self.discriminator(z_fake)
-            encoder_loss = torch.mean(binary_cross_entropy(g_discriminated_fake, torch.ones_like(discriminated_fake)))
-            autoencoder_loss = (0.995 * reconstruction_loss) + (0.005 * encoder_loss)
+            generator_loss = torch.mean(binary_cross_entropy(g_discriminated_fake, torch.ones_like(g_discriminated_fake)))
+            autoencoder_loss = (0.995 * reconstruction_loss) + (0.005 * generator_loss)
             autoencoder_loss.backward()
 
             self.optimizer_autoencoder.step()
 
-            epoch_loss_encoder += encoder_loss.item()
+            epoch_loss_generator += generator_loss.item()
             epoch_loss_reconstruction += reconstruction_loss.item()
             epoch_loss_discriminator += discriminator_loss.item()
 
-        loss['Encoder Loss'] = epoch_loss_encoder
-        loss['Rec. Loss'] = epoch_loss_reconstruction
-        loss['Dis. Loss'] = epoch_loss_discriminator
+        loss['generator'] = epoch_loss_generator
+        loss['reconstruction'] = epoch_loss_reconstruction
+        loss['discriminator'] = epoch_loss_discriminator
 
         return loss
 
@@ -215,7 +215,7 @@ class DAAE(nn.Module):
             'optimizer_discriminator_state_dict': self.optimizer_discriminator.state_dict(),
             'normalize_min': min,
             'normalize_max': max
-        }, 'models/daae_' + str(epoch) + '.pth')
+        }, 'models/daae_' + name + '.pth')
 
     class AutoEncoder2d(nn.Module):
         def __init__(self):
