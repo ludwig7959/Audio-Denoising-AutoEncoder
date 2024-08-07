@@ -62,10 +62,7 @@ for file in os.listdir(config.NOISY_PATH):
     waveforms = []
     for i in range(len(stfts)):
         stft = min_max_normalize(stfts[i].to(config.DEVICE), normalize_min, normalize_max)
-        if isinstance(model, DAAE):
-            denoised_spectrogram = model.autoencoder(stft.unsqueeze(0).unsqueeze(0)).squeeze()
-        else:
-            denoised_spectrogram = model(stft.unsqueeze(0)).squeeze()
+        denoised_spectrogram = model(stft.unsqueeze(0)).squeeze()
         resized = transforms.Resize(shape)(denoised_spectrogram)
         denormalized = min_max_denormalize(resized.to(config.DEVICE), normalize_min, normalize_max)
 

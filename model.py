@@ -203,6 +203,9 @@ class DAAE(nn.Module):
 
         return loss
 
+    def forward(self, x):
+        return self.autoencoder(x)
+
     def corrupt(self, x):
         noise_real = self.sigma * torch.randn(x.real.size())
         noise_imag = self.sigma * torch.randn(x.imag.size())
