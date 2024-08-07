@@ -283,13 +283,10 @@ class DAAE(nn.Module):
             super().__init__()
 
             self.conv1 = layer.ComplexConv2d(in_channels=1, out_channels=16, kernel_size=5, padding=2, stride=2)
-            self.batch1 = layer.ComplexBatchNorm2d(num_features=16)
             self.activation1 = layer.ComplexLeakyReLU()
             self.conv2 = layer.ComplexConv2d(in_channels=16, out_channels=32, kernel_size=5, padding=2, stride=2)
-            self.batch2 = layer.ComplexBatchNorm2d(num_features=32)
             self.activation2 = layer.ComplexLeakyReLU()
             self.conv3 = layer.ComplexConv2d(in_channels=32, out_channels=64, kernel_size=5, padding=2, stride=2)
-            self.batch3 = layer.ComplexBatchNorm2d(num_features=64)
             self.activation3 = layer.ComplexLeakyReLU()
             self.conv4 = layer.ComplexConv2d(in_channels=64, out_channels=64, kernel_size=5, padding=2, stride=2)
 
@@ -299,25 +296,23 @@ class DAAE(nn.Module):
             self.activation6 = layer.ComplexLeakyReLU()
 
             self.linear7 = nn.Linear(in_features=512, out_features=128)
-            self.batch7 = nn.BatchNorm1d(128)
             self.activation7 = nn.LeakyReLU()
             self.linear8 = nn.Linear(in_features=128, out_features=16)
-            self.batch8 = nn.BatchNorm1d(16)
             self.activation8 = nn.LeakyReLU()
             self.linear9 = nn.Linear(in_features=16, out_features=1)
             self.activation9 = nn.Sigmoid()
 
         def discriminate(self, x):
-            x = self.activation1(self.batch1(self.conv1(x)))
-            x = self.activation2(self.batch2(self.conv2(x)))
-            x = self.activation3(self.batch3(self.conv3(x)))
+            x = self.activation1(self.conv1(x))
+            x = self.activation2(self.conv2(x))
+            x = self.activation3(self.conv3(x))
             x = self.conv4(x)
 
             x = self.activation5(self.linear5(torch.complex(x.real.view(x.size(0), -1), x.imag.view(x.size(0), -1))))
             x = self.activation6(self.linear6(x))
 
-            x = self.activation7(self.batch7(self.linear7(torch.cat((torch.abs(x), torch.angle(x)), dim=1))))
-            x = self.activation8(self.batch8(self.linear8(x)))
+            x = self.activation7(self.linear7(torch.cat((torch.abs(x), torch.angle(x)), dim=1)))
+            x = self.activation8(self.linear8(x))
             x = self.activation9(self.linear9(x))
 
             return x
