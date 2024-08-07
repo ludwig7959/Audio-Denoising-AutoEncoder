@@ -176,9 +176,7 @@ class DAAE(nn.Module):
             self.optimizer_discriminator.zero_grad()
             discriminated_real = self.discriminator(input)
             discriminated_fake = self.discriminator(z_fake.detach())
-            discriminator_loss = 0.005 * torch.mean(
-                binary_cross_entropy(discriminated_real, real_labels) +
-                binary_cross_entropy(discriminated_fake, fake_labels))
+            discriminator_loss = 0.5 * nn.BCELoss()(discriminated_real, real_labels) + nn.BCELoss()(discriminated_fake, fake_labels)
             discriminator_loss.backward(retain_graph=True)
             self.optimizer_discriminator.step()
 
@@ -186,7 +184,7 @@ class DAAE(nn.Module):
 
             reconstruction_loss = complex_mse_loss(input, z_fake)
             g_discriminated_fake = self.discriminator(z_fake)
-            generator_loss = torch.mean(binary_cross_entropy(g_discriminated_fake, real_labels))
+            generator_loss = nn.BCELoss()(g_discriminated_fake, real_labels)
             autoencoder_loss = (0.995 * reconstruction_loss) + (0.005 * generator_loss)
             autoencoder_loss.backward()
 
