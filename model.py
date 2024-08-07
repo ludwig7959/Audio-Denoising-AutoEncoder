@@ -141,7 +141,7 @@ class DCUnet(nn.Module):
             'optimizer_state_dict': self.optimizer.state_dict(),
             'normalize_min': min,
             'normalize_max': max
-        }, 'models/dcunet_' + name + '.pth')
+        }, f'models/dcunet_{name}.pth')
 
 
 class DAAE(nn.Module):
@@ -176,7 +176,7 @@ class DAAE(nn.Module):
             self.optimizer_discriminator.zero_grad()
             discriminated_real = self.discriminator(input)
             discriminated_fake = self.discriminator(z_fake.detach())
-            discriminator_loss = 0.2 * torch.mean(
+            discriminator_loss = 0.05 * torch.mean(
                 binary_cross_entropy(discriminated_real, torch.ones_like(discriminated_real, device=next(self.parameters()).device)) +
                 binary_cross_entropy(discriminated_fake, torch.zeros_like(discriminated_fake)))
             discriminator_loss.backward(retain_graph=True)

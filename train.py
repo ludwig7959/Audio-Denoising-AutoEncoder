@@ -139,7 +139,7 @@ for epoch in range(config.EPOCHS):
     early_stopping(epoch_loss)
     if config.EARLY_STOPPING and early_stopping.early_stop:
         print('Early Stopping...')
-        model.save(f'{epoch + 1}_early_stopped', normalize_min, normalize_max)
+        model.save('early_stopped', normalize_min, normalize_max)
         summary_writer.close()
         exit(0)
 
