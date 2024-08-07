@@ -110,9 +110,7 @@ class DCUnet(nn.Module):
         mask_imag = mask.imag
 
         output_real = mask_real * x.real - mask_imag * x.imag
-        output_real = torch.squeeze(output_real, 1)
         output_imag = mask_real * x.imag + mask_imag * x.real
-        output_imag = torch.squeeze(output_imag, 1)
 
         output = torch.complex(output_real, output_imag)
 
