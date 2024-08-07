@@ -170,12 +170,14 @@ class DAAE(nn.Module):
             input = features_batch.to(next(self.parameters()).device)
             corrupted = self.corrupt(input)
             z_fake = self.autoencoder(corrupted)
-            real_labels = torch.ones_like(input)
-            fake_labels = torch.zeros_like(input)
 
             self.optimizer_discriminator.zero_grad()
             discriminated_real = self.discriminator(input)
             discriminated_fake = self.discriminator(z_fake.detach())
+
+            real_labels = torch.ones_like(discriminated_real)
+            fake_labels = torch.zeros_like(discriminated_fake)
+
             discriminator_loss = 0.5 * nn.BCELoss()(discriminated_real, real_labels) + nn.BCELoss()(discriminated_fake, fake_labels)
             discriminator_loss.backward(retain_graph=True)
             self.optimizer_discriminator.step()
