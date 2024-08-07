@@ -152,7 +152,7 @@ class DAAE(nn.Module):
 
         self.sigma = sigma
 
-        self.autoencoder = self.AutoEncoder2d()
+        self.autoencoder = DCUnet()
         self.discriminator = self.Discriminator()
 
         self.optimizer_autoencoder = optim.RMSprop(self.autoencoder.parameters())
@@ -176,7 +176,7 @@ class DAAE(nn.Module):
             self.optimizer_discriminator.zero_grad()
             discriminated_real = self.discriminator(input)
             discriminated_fake = self.discriminator(z_fake.detach())
-            discriminator_loss = 0.05 * torch.mean(
+            discriminator_loss = 0.005 * torch.mean(
                 binary_cross_entropy(discriminated_real, torch.ones_like(discriminated_real, device=next(self.parameters()).device)) +
                 binary_cross_entropy(discriminated_fake, torch.zeros_like(discriminated_fake)))
             discriminator_loss.backward(retain_graph=True)
@@ -208,14 +208,14 @@ class DAAE(nn.Module):
 
         return torch.complex(x.real + noise_real.to(x.device), x.imag + noise_imag.to(x.device))
 
-    def save(self, epoch, min, max):
+    def save(self, name, min, max):
         torch.save({
             'model_state_dict': self.state_dict(),
             'optimizer_autoencoder_state_dict': self.optimizer_autoencoder.state_dict(),
             'optimizer_discriminator_state_dict': self.optimizer_discriminator.state_dict(),
             'normalize_min': min,
             'normalize_max': max
-        }, 'models/daae_' + name + '.pth')
+        }, f'models/daae_{name}.pth')
 
     class AutoEncoder2d(nn.Module):
         def __init__(self):
