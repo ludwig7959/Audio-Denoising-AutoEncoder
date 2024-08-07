@@ -145,7 +145,7 @@ class DCUnet(nn.Module):
 class DAAE(nn.Module):
 
     # sigma: Corruption level
-    def __init__(self, sigma=0.1):
+    def __init__(self, sigma=0.5):
         super().__init__()
 
         self.sigma = sigma
@@ -162,21 +162,23 @@ class DAAE(nn.Module):
         epoch_loss_reconstruction = 0.0
         epoch_loss_discriminator = 0.0
 
+        b = 0
         for features_batch, labels_batch in batches:
             self.autoencoder.train()
             self.discriminator.train()
 
             input = features_batch.to(next(self.parameters()).device)
             corrupted = self.corrupt(input)
-
             z_fake = self.autoencoder(corrupted)
+            real_labels = torch.ones_like(input)
+            fake_labels = torch.zeros_like(input)
 
             self.optimizer_discriminator.zero_grad()
             discriminated_real = self.discriminator(input)
             discriminated_fake = self.discriminator(z_fake.detach())
             discriminator_loss = 0.005 * torch.mean(
-                binary_cross_entropy(discriminated_real, torch.ones_like(discriminated_real, device=next(self.parameters()).device)) +
-                binary_cross_entropy(discriminated_fake, torch.zeros_like(discriminated_fake)))
+                binary_cross_entropy(discriminated_real, real_labels) +
+                binary_cross_entropy(discriminated_fake, fake_labels))
             discriminator_loss.backward(retain_graph=True)
             self.optimizer_discriminator.step()
 
@@ -184,7 +186,7 @@ class DAAE(nn.Module):
 
             reconstruction_loss = complex_mse_loss(input, z_fake)
             g_discriminated_fake = self.discriminator(z_fake)
-            generator_loss = torch.mean(binary_cross_entropy(g_discriminated_fake, torch.ones_like(g_discriminated_fake)))
+            generator_loss = torch.mean(binary_cross_entropy(g_discriminated_fake, real_labels))
             autoencoder_loss = (0.995 * reconstruction_loss) + (0.005 * generator_loss)
             autoencoder_loss.backward()
 
@@ -193,10 +195,11 @@ class DAAE(nn.Module):
             epoch_loss_generator += generator_loss.item()
             epoch_loss_reconstruction += reconstruction_loss.item()
             epoch_loss_discriminator += discriminator_loss.item()
+            b += 1
 
-        loss['generator'] = epoch_loss_generator
+        loss['generator'] = epoch_loss_generator / b
         loss['reconstruction'] = epoch_loss_reconstruction
-        loss['discriminator'] = epoch_loss_discriminator
+        loss['discriminator'] = epoch_loss_discriminator / b
 
         return loss
 
