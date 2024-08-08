@@ -28,9 +28,27 @@ def complex_mse_loss(y_true, y_pred):
     return real_loss + imag_loss
 
 
-def min_max_normalize(tensor, min_val, max_val):
-    return (tensor - min_val) / (max_val - min_val)
+def min_max_normalize(self, tensor, min_val, max_val):
+    abs_tensor = torch.abs(tensor)
+
+    normalized_tensor = (abs_tensor - min_val) / (max_val - min_val)
+
+    scaled_tensor = normalized_tensor * 2 - 1
+
+    phase = torch.angle(tensor)
+    scaled_tensor = scaled_tensor * torch.exp(1j * phase)
+
+    return scaled_tensor
 
 
 def min_max_denormalize(tensor, min_val, max_val):
-    return tensor * (max_val - min_val) + min_val
+    abs_tensor = torch.abs(tensor)
+
+    normalized_tensor = (abs_tensor + 1) / 2
+
+    denormalized_tensor = normalized_tensor * (max_val - min_val) + min_val
+
+    phase = torch.angle(tensor)
+    denormalized_tensor = denormalized_tensor * torch.exp(1j * phase)
+
+    return denormalized_tensor
