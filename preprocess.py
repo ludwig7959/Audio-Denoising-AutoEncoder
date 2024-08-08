@@ -1,9 +1,6 @@
-import os
-
 import librosa
 import numpy as np
 
-import config
 import soundfile as sf
 
 from config.common import *
