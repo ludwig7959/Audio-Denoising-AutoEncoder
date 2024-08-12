@@ -15,8 +15,8 @@ EPOCHS = int(os.getenv('EPOCHS', 30))
 SAVE_EACH_EPOCH = bool(strtobool(os.getenv('SAVE_EACH_EPOCH', 'True')))
 
 VALIDATION = bool(strtobool(os.getenv('VALIDATION', 'True')))
-VALIDATION_INPUT_PATH = v_input
-VALIDATION_TARGET_PATH = v_target
+VALIDATION_INPUT_PATH = os.getenv('VALIDATION_INPUT_PATH', 'v_input')
+VALIDATION_TARGET_PATH = os.getenv('VALIDATION_TARGET_PATH', 'v_target')
 
 EARLY_STOPPING = bool(strtobool(os.getenv('EARLY_STOPPING', 'True')))
 EARLY_STOPPING_LOSS = os.getenv('EARLY_STOPPING_LOSS', 'loss')

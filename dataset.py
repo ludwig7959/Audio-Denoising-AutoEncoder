@@ -1,3 +1,4 @@
+import os.path
 from pathlib import Path
 
 import numpy as np
@@ -23,8 +24,8 @@ class DenoiserDataset(Dataset):
         self.inputs = []
         self.targets = []
         for file in sorted(list(Path(input_path).rglob('*.wav'))):
-            target_file = target_path / file.name
-            if not target_file.is_file():
+            target_file = os.path.join(target_path, file.name)
+            if not os.path.isfile(target_file):
                 print(f'Skipping {file} because there is no matching target.')
                 continue
 
@@ -45,13 +46,13 @@ class DenoiserDataset(Dataset):
             self.inputs.append(input_stft)
             self.targets.append(target_stft)
 
-        self.inputs = torch.tensor(self.inputs, dtype=torch.complex64)
-        self.targets = torch.tensor(self.targets, dtype=torch.complex64)
+        self.inputs = torch.stack(self.inputs)
+        self.targets = torch.stack(self.targets)
 
         self.len_ = len(self.inputs)
 
         self.min = torch.min(torch.abs(self.inputs).min(), torch.abs(self.targets).min())
-        self.max = torch.min(torch.abs(self.inputs).max(), torch.abs(self.targets).max())
+        self.max = torch.max(torch.abs(self.inputs).max(), torch.abs(self.targets).max())
 
     def __len__(self):
         return self.len_
@@ -67,9 +68,9 @@ class DenoiserDataset(Dataset):
 
         return cut_waveform
 
-    def normalize(self, min, max):
-        self.inputs = min_max_normalize(self.inputs, min, max)
-        self.targets = min_max_normalize(self.targets, min, max)
+    def normalize(self, min_val, max_val):
+        self.inputs = min_max_normalize(self.inputs, min_val, max_val)
+        self.targets = min_max_normalize(self.targets, min_val, max_val)
 
     def get_min_max(self):
         return self.min.item(), self.max.item()

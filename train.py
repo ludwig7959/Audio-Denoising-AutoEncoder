@@ -11,16 +11,19 @@ from dataset import DenoiserDataset
 from model import DCUnet, DAAE
 from window import HAMMING_WINDOW
 
-if __name__ == 'main':
-    if not TRAINING_INPUT_PATH.is_dir():
+if __name__ == '__main__':
+    if not os.path.isdir(TRAINING_INPUT_PATH):
         print('Input path doesn''t exist')
         exit(0)
-    if not TRAINING_TARGET_PATH.is_dir():
+    if not os.path.isdir(TRAINING_TARGET_PATH):
         print('Target path doesn''t exist')
         exit(0)
 
     train_dataset = DenoiserDataset(TRAINING_INPUT_PATH, TRAINING_TARGET_PATH, n_fft=N_FFT, hop_length=HOP_LENGTH, window=HAMMING_WINDOW)
-    normalize_min, normalize_max = train_dataset.get_min_max() if NORMALIZATION else -1.0, 1.0
+    if NORMALIZATION:
+        normalize_min, normalize_max = train_dataset.get_min_max()
+    else:
+        normalize_min, normalize_max = -1.0, 1.0
     train_dataset.normalize(normalize_min, normalize_max)
     train_dataloader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
 
@@ -72,7 +75,7 @@ if __name__ == 'main':
     summary_writer = SummaryWriter(log_dir=f'summary/summary_{datetime.now().strftime("%Y%m%d-%H%M%S")}')
 
     for epoch in range(EPOCHS):
-        epoch_loss = model.train_epoch(batches)
+        epoch_loss = model.train_epoch(train_dataloader, validation_dataloader)
 
         print(f'Epoch {epoch + 1}', end=", ")
         losses = []

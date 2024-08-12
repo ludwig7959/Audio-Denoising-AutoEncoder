@@ -28,7 +28,7 @@ def complex_mse_loss(y_true, y_pred):
     return real_loss + imag_loss
 
 
-def min_max_normalize(self, tensor, min_val, max_val):
+def min_max_normalize(tensor, min_val, max_val):
     abs_tensor = torch.abs(tensor)
 
     normalized_tensor = (abs_tensor - min_val) / (max_val - min_val)

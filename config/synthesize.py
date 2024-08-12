@@ -1,0 +1,11 @@
+import os
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
+SYNTHESIZING_CLEAN_PATH = os.getenv('SYNTHESIZING_CLEAN_PATH', 'clean')
+SYNTHESIZING_NOISE_PATH = os.getenv('SYNTHESIZING_NOISE_PATH', 'noise')
+SYNTHESIZING_OUTPUT_INPUT = os.getenv('SYNTHESIZING_OUTPUT_INPUT', 'input')
+SYNTHESIZING_OUTPUT_TARGET = os.getenv('SYNTHESIZING_OUTPUT_TARGET', 'target')
+NOISES_PER_CLEAN = int(os.getenv('NOISES_PER_CLEAN', 20))
