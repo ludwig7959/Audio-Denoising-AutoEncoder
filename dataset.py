@@ -37,11 +37,11 @@ class DenoiserDataset(Dataset):
 
             input_stft = torch.stft(input_waveform, n_fft=self.n_fft, hop_length=self.hop_length, window=self.window,
                                     return_complex=True, center=True).squeeze()
-            input_stft = transforms.Resize((1024, 1024))(input_stft.squeeze())
+            input_stft = transforms.Resize((1024, 1024))(input_stft).unsqueeze(0)
 
             target_stft = torch.stft(target_waveform, n_fft=self.n_fft, hop_length=self.hop_length, window=self.window,
                                      return_complex=True, center=True).squeeze()
-            target_stft = transforms.Resize((1024, 1024))(target_stft.squeeze())
+            target_stft = transforms.Resize((1024, 1024))(target_stft).unsqueeze(0)
 
             self.inputs.append(input_stft)
             self.targets.append(target_stft)

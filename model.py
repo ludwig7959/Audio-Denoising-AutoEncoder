@@ -4,6 +4,7 @@ from torch import optim
 
 import layer
 from function import complex_mse_loss
+from config.common import DEVICE
 
 
 class DCUnet(nn.Module):
@@ -116,10 +117,14 @@ class DCUnet(nn.Module):
         return output
 
     def train_epoch(self, train_loader, validation_loader):
-        loss = {'loss': 0.0, 'val_loss': 0.0}
+        losses = {'loss': 0.0, 'val_loss': 0.0}
         epoch_loss = 0.0
+        num_batches = len(train_loader)
         for input_batch, target_batch in train_loader:
             self.train()
+            
+            input_batch = input_batch.to(DEVICE)
+            target_batch = target_batch.to(DEVICE)
 
             output = self(input_batch)
             loss = complex_mse_loss(output, target_batch)
@@ -128,21 +133,25 @@ class DCUnet(nn.Module):
             loss.backward()
             self.optimizer.step()
 
-        loss['loss'] = epoch_loss
+        losses['loss'] = epoch_loss / num_batches
 
         if validation_loader is not None:
             val_loss = 0.0
+            num_batches = len(validation_loader)
             for input_batch, target_batch in train_loader:
                 self.eval()
 
-                with torch.no_grad:
+                input_batch = input_batch.to(DEVICE)
+                target_batch = target_batch.to(DEVICE)
+
+                with torch.no_grad():
                     output = self(input_batch)
                     loss = complex_mse_loss(output, target_batch)
                     val_loss += loss.item()
 
-            loss['val_loss'] = val_loss
+            losses['val_loss'] = val_loss / num_batches
 
-        return loss
+        return losses
 
     def save(self, name, min, max):
         torch.save({
@@ -178,8 +187,8 @@ class DAAE(nn.Module):
             self.autoencoder.train()
             self.discriminator.train()
 
-            corrupted = features_batch.to(next(self.parameters()).device)
-            clean = labels_batch.to(next(self.parameters()).device)
+            corrupted = features_batch.to(DEVICE)
+            clean = labels_batch.to(DEVICE)
             z_fake = self.autoencoder(corrupted)
 
             self.optimizer_discriminator.zero_grad()
