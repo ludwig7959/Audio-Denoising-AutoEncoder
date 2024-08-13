@@ -318,24 +318,12 @@ class DAAE(nn.Module):
         def __init__(self):
             super().__init__()
 
-            self.conv1 = layer.ComplexConv2d(in_channels=1, out_channels=16, kernel_size=5, padding=2, stride=2)
+            self.conv1 = layer.ComplexConvTranspose2d(in_channels=256, out_channels=128, kernel_size=4, padding=1, stride=2)
             self.activation1 = layer.ComplexLeakyReLU()
-            self.conv2 = layer.ComplexConv2d(in_channels=16, out_channels=32, kernel_size=5, padding=2, stride=2)
+            self.conv2 = layer.ComplexConvTranspose2d(in_channels=128, out_channels=64, kernel_size=4, padding=1, stride=2)
             self.activation2 = layer.ComplexLeakyReLU()
-            self.conv3 = layer.ComplexConv2d(in_channels=32, out_channels=64, kernel_size=5, padding=2, stride=2)
+            self.conv3 = layer.ComplexConvTranspose2d(in_channels=64, out_channels=32, kernel_size=4, padding=1, stride=2)
             self.activation3 = layer.ComplexLeakyReLU()
-            self.conv4 = layer.ComplexConv2d(in_channels=64, out_channels=64, kernel_size=5, padding=2, stride=2)
-
-            self.linear5 = layer.ComplexLinear(in_features=64 * 64 * 64, out_features=1024)
-            self.activation5 = layer.ComplexLeakyReLU()
-            self.linear6 = layer.ComplexLinear(in_features=1024, out_features=256)
-            self.activation6 = layer.ComplexLeakyReLU()
-
-            self.linear7 = nn.Linear(in_features=512, out_features=128)
-            self.activation7 = nn.LeakyReLU()
-            self.linear8 = nn.Linear(in_features=128, out_features=16)
-            self.activation8 = nn.LeakyReLU()
-            self.linear9 = nn.Linear(in_features=16, out_features=1)
             self.activation9 = nn.Sigmoid()
 
         def discriminate(self, x):

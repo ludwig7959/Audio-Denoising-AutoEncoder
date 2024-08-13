@@ -7,7 +7,7 @@ from config.common import *
 from config.preprocess import *
 
 
-def preprocess(audio):
+def preprocess(audio, sr):
     audio_resampled = librosa.resample(audio, orig_sr=sr, target_sr=SAMPLING_RATE)
     audio_normalized = rms_normalize(audio_resampled, TARGET_RMS)
 
@@ -35,4 +35,4 @@ if __name__ == '__main__':
             continue
 
         audio, sr = librosa.load(os.path.join(PREPROCESSING_INPUT_PATH, audio_file_name), sr=None, mono=True)
-        sf.write(os.path.join(PREPROCESSING_OUTPUT_PATH, audio_file_name), preprocess(audio), samplerate=SAMPLING_RATE)
+        sf.write(os.path.join(PREPROCESSING_OUTPUT_PATH, audio_file_name), preprocess(audio, sr), samplerate=SAMPLING_RATE)

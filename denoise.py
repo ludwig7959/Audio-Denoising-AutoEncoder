@@ -1,8 +1,9 @@
 import gc
 
+import librosa
 import numpy as np
 import soundfile as sf
-import torchaudio
+import torch
 from torchvision.transforms import transforms
 
 from config.common import *
@@ -39,8 +40,8 @@ if __name__ == '__main__':
         if not file.endswith(".wav"):
             continue
 
-        audio, sr = torchaudio.load(os.path.join(NOISY_PATH, file))
-        preprocessed = preprocess(audio)
+        audio, sr = librosa.load(os.path.join(NOISY_PATH, file), sr=None)
+        preprocessed = torch.tensor(preprocess(audio, sr)).unsqueeze(0)
         audio_length = preprocessed.size(1)
 
         y_length = int(N_FFT / 2 + 1)
@@ -52,7 +53,7 @@ if __name__ == '__main__':
         for i in range(len(sliced)):
             stft = torch.stft(sliced[i].to(DEVICE), n_fft=N_FFT, hop_length=HOP_LENGTH, window=torch.hamming_window(window_length=N_FFT).to(DEVICE), return_complex=True)
             shape = stft.squeeze().shape
-            stft_resized = transforms.Resize((1024, 1024))(stft.squeeze())
+            stft_resized = transforms.Resize((1024, 1024))(stft.squeeze()).unsqueeze(0)
             stfts.append(stft_resized)
 
         waveforms = []
