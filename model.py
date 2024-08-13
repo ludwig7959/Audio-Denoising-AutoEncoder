@@ -153,11 +153,10 @@ class DCUnet(nn.Module):
 
         return losses
 
-    def save(self, name, min, max):
+    def save(self, name, max):
         torch.save({
             'model_state_dict': self.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
-            'normalize_min': min,
             'normalize_max': max
         }, f'models/dcunet_{name}.pth')
 
@@ -237,7 +236,6 @@ class DAAE(nn.Module):
             'model_state_dict': self.state_dict(),
             'optimizer_autoencoder_state_dict': self.optimizer_autoencoder.state_dict(),
             'optimizer_discriminator_state_dict': self.optimizer_discriminator.state_dict(),
-            'normalize_min': min,
             'normalize_max': max
         }, f'models/daae_{name}.pth')
 
@@ -324,22 +322,20 @@ class DAAE(nn.Module):
             self.activation2 = layer.ComplexLeakyReLU()
             self.conv3 = layer.ComplexConvTranspose2d(in_channels=64, out_channels=32, kernel_size=4, padding=1, stride=2)
             self.activation3 = layer.ComplexLeakyReLU()
-            self.activation9 = nn.Sigmoid()
+
+            self.real_layer = nn.Conv2d(32, 1, kernel_size=8, stride=1, padding=0)
+            self.sigmoid = nn.Sigmoid()
 
         def discriminate(self, x):
             x = self.activation1(self.conv1(x))
             x = self.activation2(self.conv2(x))
             x = self.activation3(self.conv3(x))
-            x = self.conv4(x)
 
-            x = self.activation5(self.linear5(torch.complex(x.real.view(x.size(0), -1), x.imag.view(x.size(0), -1))))
-            x = self.activation6(self.linear6(x))
+            magnitude = torch.sqrt(x.real**2 + x.imag**2)
+            output = self.real_layer(magnitude)
+            output = self.sigmoid(output)
 
-            x = self.activation7(self.linear7(torch.cat((torch.abs(x), torch.angle(x)), dim=1)))
-            x = self.activation8(self.linear8(x))
-            x = self.activation9(self.linear9(x))
-
-            return x
+            return output
 
         def forward(self, z):
             return self.discriminate(z)

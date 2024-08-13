@@ -7,7 +7,7 @@ import torchaudio
 from torch.utils.data import Dataset
 from torchvision import transforms
 
-from function import min_max_normalize
+from function import max_normalize
 
 
 class DenoiserDataset(Dataset):
@@ -51,7 +51,6 @@ class DenoiserDataset(Dataset):
 
         self.len_ = len(self.inputs)
 
-        self.min = torch.min(torch.abs(self.inputs).min(), torch.abs(self.targets).min())
         self.max = torch.max(torch.abs(self.inputs).max(), torch.abs(self.targets).max())
 
     def __len__(self):
@@ -68,9 +67,9 @@ class DenoiserDataset(Dataset):
 
         return cut_waveform
 
-    def normalize(self, min_val, max_val):
-        self.inputs = min_max_normalize(self.inputs, min_val, max_val)
-        self.targets = min_max_normalize(self.targets, min_val, max_val)
+    def normalize(self, max_val):
+        self.inputs = max_normalize(self.inputs, max_val)
+        self.targets = max_normalize(self.targets, max_val)
 
-    def get_min_max(self):
-        return self.min.item(), self.max.item()
+    def get_max(self):
+        return self.max.item()

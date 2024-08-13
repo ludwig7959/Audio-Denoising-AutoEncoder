@@ -21,16 +21,16 @@ if __name__ == '__main__':
 
     train_dataset = DenoiserDataset(TRAINING_INPUT_PATH, TRAINING_TARGET_PATH, n_fft=N_FFT, hop_length=HOP_LENGTH, window=HAMMING_WINDOW)
     if NORMALIZATION:
-        normalize_min, normalize_max = train_dataset.get_min_max()
+        normalize_max = train_dataset.get_max()
     else:
-        normalize_min, normalize_max = -1.0, 1.0
-    train_dataset.normalize(normalize_min, normalize_max)
+        normalize_max = 1.0
+    train_dataset.normalize(normalize_max)
     train_dataloader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
 
     validation_dataloader = None
     if VALIDATION:
         validation_dataset = DenoiserDataset(VALIDATION_INPUT_PATH, VALIDATION_TARGET_PATH, n_fft=N_FFT, hop_length=HOP_LENGTH, window=HAMMING_WINDOW)
-        validation_dataset.normalize(normalize_min, normalize_max)
+        validation_dataset.normalize(normalize_max)
         validation_dataloader = DataLoader(validation_dataset, batch_size=BATCH_SIZE * 2, shuffle=False)
 
     gc.collect()
@@ -86,18 +86,18 @@ if __name__ == '__main__':
 
         # Saving each epoch when set to true
         if SAVE_EACH_EPOCH:
-            model.save(str(epoch + 1), normalize_min, normalize_max)
+            model.save(str(epoch + 1), normalize_max)
 
         # Early stopping
         early_stopping(epoch_loss)
         if EARLY_STOPPING and early_stopping.early_stop:
             print('Early Stopping...')
-            model.save('early_stopped', normalize_min, normalize_max)
+            model.save('early_stopped', normalize_max)
             summary_writer.close()
             exit(0)
 
         gc.collect()
         torch.cuda.empty_cache()
 
-    model.save('conclusion', normalize_min, normalize_max)
+    model.save('conclusion', normalize_max)
     summary_writer.close()

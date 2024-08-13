@@ -3,12 +3,11 @@ import gc
 import librosa
 import numpy as np
 import soundfile as sf
-import torch
 from torchvision.transforms import transforms
 
 from config.common import *
 from config.denoise import *
-from function import slice_waveform, min_max_normalize, min_max_denormalize
+from function import slice_waveform, max_normalize, max_denormalize
 from model import DCUnet, DAAE
 from preprocess import preprocess
 
@@ -28,7 +27,6 @@ if __name__ == '__main__':
 
     loaded_weights = torch.load(MODEL_PATH, map_location=DEVICE, weights_only=False)
     model.load_state_dict(loaded_weights['model_state_dict'])
-    normalize_min = loaded_weights['normalize_min']
     normalize_max = loaded_weights['normalize_max']
 
     os.makedirs(OUTPUT_PATH, exist_ok=True)
@@ -58,10 +56,10 @@ if __name__ == '__main__':
 
         waveforms = []
         for i in range(len(stfts)):
-            stft = min_max_normalize(stfts[i].to(DEVICE), normalize_min, normalize_max)
+            stft = max_normalize(stfts[i].to(DEVICE), normalize_max)
             denoised_spectrogram = model(stft.unsqueeze(0)).squeeze()
             resized = transforms.Resize(shape)(denoised_spectrogram)
-            denormalized = min_max_denormalize(resized.to(DEVICE), normalize_min, normalize_max)
+            denormalized = max_denormalize(resized.to(DEVICE), normalize_max)
 
             waveform = torch.istft(denormalized, n_fft=N_FFT, hop_length=HOP_LENGTH, window=torch.hamming_window(window_length=N_FFT).to(DEVICE))
             waveform_numpy = waveform.detach().cpu().numpy()
