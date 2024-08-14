@@ -9,7 +9,7 @@ from config.common import *
 from config.denoise import *
 from function import slice_waveform, max_normalize, max_denormalize
 from model import DCUnet, DAAE
-from preprocess import preprocess
+from preprocess import common_preprocess
 
 
 if __name__ == '__main__':
@@ -39,11 +39,10 @@ if __name__ == '__main__':
             continue
 
         audio, sr = librosa.load(os.path.join(NOISY_PATH, file), sr=None)
-        preprocessed = torch.tensor(preprocess(audio, sr)).unsqueeze(0)
+        preprocessed = torch.tensor(common_preprocess(audio, sr)).unsqueeze(0)
         audio_length = preprocessed.size(1)
 
-        y_length = int(N_FFT / 2 + 1)
-        slice_length = int(y_length * HOP_LENGTH - HOP_LENGTH + 2)
+        slice_length = int(TIME_DOMAIN_SIZE * HOP_LENGTH - HOP_LENGTH + 2)
 
         stfts = []
         shape = (0, 0)
@@ -51,7 +50,7 @@ if __name__ == '__main__':
         for i in range(len(sliced)):
             stft = torch.stft(sliced[i].to(DEVICE), n_fft=N_FFT, hop_length=HOP_LENGTH, window=torch.hamming_window(window_length=N_FFT).to(DEVICE), return_complex=True)
             shape = stft.squeeze().shape
-            stft_resized = transforms.Resize((1024, 1024))(stft.squeeze()).unsqueeze(0)
+            stft_resized = transforms.Resize((1024, TIME_DOMAIN_SIZE))(stft.squeeze()).unsqueeze(0)
             stfts.append(stft_resized)
 
         waveforms = []

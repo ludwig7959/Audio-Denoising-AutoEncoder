@@ -7,6 +7,7 @@ import torchaudio
 from torch.utils.data import Dataset
 from torchvision import transforms
 
+import config.common
 from function import max_normalize
 
 
@@ -18,8 +19,7 @@ class DenoiserDataset(Dataset):
         self.hop_length = hop_length
         self.window = window
 
-        y_length = int(self.n_fft / 2 + 1)
-        self.signal_length = int(y_length * self.hop_length - self.hop_length + 2)
+        self.signal_length = int(config.common.TIME_DOMAIN_SIZE * self.hop_length - self.hop_length + 2)
 
         self.inputs = []
         self.targets = []
@@ -37,11 +37,11 @@ class DenoiserDataset(Dataset):
 
             input_stft = torch.stft(input_waveform, n_fft=self.n_fft, hop_length=self.hop_length, window=self.window,
                                     return_complex=True, center=True).squeeze()
-            input_stft = transforms.Resize((1024, 1024))(input_stft).unsqueeze(0)
+            input_stft = transforms.Resize((1024, config.common.TIME_DOMAIN_SIZE))(input_stft).unsqueeze(0)
 
             target_stft = torch.stft(target_waveform, n_fft=self.n_fft, hop_length=self.hop_length, window=self.window,
                                      return_complex=True, center=True).squeeze()
-            target_stft = transforms.Resize((1024, 1024))(target_stft).unsqueeze(0)
+            target_stft = transforms.Resize((1024, config.common.TIME_DOMAIN_SIZE))(target_stft).unsqueeze(0)
 
             self.inputs.append(input_stft)
             self.targets.append(target_stft)
